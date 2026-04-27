@@ -1,6 +1,8 @@
-// App entry: sidebar nav routing, live clock, per-tab mounting.
+// App entry: auth gate, sidebar nav routing, live clock, per-tab mounting.
+
 import { fmtTime, fmtDate, fmtTzAbbrev, getTimeZone } from "./format.js";
-import { subscribe, getState } from "./state.js";
+import { subscribe, getState, loadInitial, onError, resetCache } from "./state.js";
+import * as auth from "./auth.js";
 import { mountInventory } from "./tabs/inventory.js";
 import { mountSales } from "./tabs/sales.js";
 import { mountProducts } from "./tabs/products.js";
@@ -17,6 +19,71 @@ const mounts = {
 };
 const mounted = new Set();
 
+// ─── Boot ────────────────────────────────────────────────────────────
+(async function boot() {
+  await auth.init();
+  if (auth.isAuthed()) {
+    await showApp();
+  } else {
+    showLogin();
+  }
+  hideBoot();
+
+  auth.onChange(async (session) => {
+    if (session) {
+      await showApp();
+    } else {
+      mounted.clear();
+      resetCache();
+      showLogin();
+    }
+  });
+})();
+
+function hideBoot() {
+  document.getElementById("boot")?.setAttribute("hidden", "");
+}
+
+function showLogin() {
+  document.getElementById("login")?.removeAttribute("hidden");
+  document.getElementById("app")?.setAttribute("hidden", "");
+}
+
+async function showApp() {
+  document.getElementById("login")?.setAttribute("hidden", "");
+  document.getElementById("app")?.removeAttribute("hidden");
+  // Pull initial data; tabs read from cache so they render immediately
+  // even if Supabase is slow.
+  await loadInitial();
+  selectTab(location.hash.slice(1) || "inventory");
+}
+
+// ─── Login form ──────────────────────────────────────────────────────
+const loginForm = document.getElementById("loginForm");
+const loginPassword = document.getElementById("loginPassword");
+const loginSubmit = document.getElementById("loginSubmit");
+const loginError = document.getElementById("loginError");
+
+loginForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  loginError.hidden = true;
+  loginError.textContent = "";
+  loginSubmit.classList.add("loading");
+  loginSubmit.disabled = true;
+  const password = loginPassword.value;
+  const result = await auth.signInWithPassword(password);
+  loginSubmit.classList.remove("loading");
+  loginSubmit.disabled = false;
+  if (!result.ok) {
+    loginError.textContent = result.error;
+    loginError.hidden = false;
+    loginPassword.select();
+  } else {
+    loginPassword.value = "";
+  }
+});
+
+// ─── Tab routing ────────────────────────────────────────────────────
 function selectTab(name) {
   if (!tabs.includes(name)) name = "inventory";
   for (const t of tabs) {
@@ -32,7 +99,6 @@ function selectTab(name) {
   }
   const desired = `#${name}`;
   if (location.hash !== desired) history.replaceState(null, "", desired);
-  // Scroll main back to top on tab change for clarity.
   document.querySelector(".main")?.scrollTo?.({ top: 0 });
   try { window.scrollTo({ top: 0 }); } catch {}
 }
@@ -43,24 +109,35 @@ document.getElementById("nav").addEventListener("click", (e) => {
   selectTab(btn.dataset.tab);
 });
 
-window.addEventListener("hashchange", () => selectTab(location.hash.slice(1)));
+window.addEventListener("hashchange", () => {
+  if (auth.isAuthed()) selectTab(location.hash.slice(1));
+});
 
-selectTab(location.hash.slice(1) || "inventory");
+// ─── Logout ─────────────────────────────────────────────────────────
+document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+  await auth.signOut();
+  // onChange handler swaps to login screen.
+});
 
-// Live clock — updates every second in the user's resolved TZ.
+// ─── Live clock ─────────────────────────────────────────────────────
 function tickClock() {
+  const t = document.getElementById("clockTime");
+  const tz = document.getElementById("clockTz");
+  const d = document.getElementById("clockDate");
+  if (!t || !tz || !d) return;
   const now = new Date();
-  document.getElementById("clockTime").textContent = fmtTime(now);
-  document.getElementById("clockTz").textContent = fmtTzAbbrev();
-  document.getElementById("clockDate").textContent = fmtDate(now);
+  t.textContent = fmtTime(now);
+  tz.textContent = fmtTzAbbrev();
+  d.textContent = fmtDate(now);
 }
 tickClock();
 setInterval(tickClock, 1000);
 
-// Saved-at indicator.
+// ─── Saved-at indicator ─────────────────────────────────────────────
 function renderSavedAt() {
-  const { lastSavedAt } = getState();
   const el = document.getElementById("savedPill");
+  if (!el) return;
+  const { lastSavedAt } = getState();
   if (!lastSavedAt) {
     el.textContent = "Not saved yet";
     el.style.opacity = "0.6";
@@ -71,3 +148,14 @@ function renderSavedAt() {
 }
 renderSavedAt();
 subscribe(renderSavedAt);
+
+// ─── Error toast ────────────────────────────────────────────────────
+const toast = document.getElementById("toast");
+let toastTimer = null;
+onError((msg) => {
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 5000);
+});

@@ -8,7 +8,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Ctext x='16' y='22' font-family='-apple-system,sans-serif' font-size='16' font-weight='700' fill='white' text-anchor='middle'%3EO%3C/text%3E%3C/svg%3E" />
   </head>
   <body>
-    <!-- SVG defs reused across charts -->
+    <!-- Reused chart gradients -->
     <svg width="0" height="0" style="position:absolute" aria-hidden="true">
       <defs>
         <linearGradient id="area-grad" x1="0" x2="0" y1="0" y2="1">
@@ -26,7 +26,40 @@
       </defs>
     </svg>
 
-    <div class="app">
+    <!-- Boot splash; replaced by login or app once JS resolves auth state -->
+    <div id="boot" class="boot">
+      <div class="boot-spinner" aria-hidden="true"></div>
+    </div>
+
+    <!-- Login screen -->
+    <div id="login" class="login" hidden>
+      <div class="login-card">
+        <div class="login-brand">
+          <div class="login-mark">OVENA HEALTH</div>
+          <div class="login-title">Commerce Portal</div>
+        </div>
+        <p class="login-sub">Enter the team password to continue.</p>
+        <form id="loginForm" autocomplete="off" novalidate>
+          <input
+            type="password"
+            id="loginPassword"
+            class="login-input"
+            placeholder="Team password"
+            autocomplete="current-password"
+            autofocus
+            required
+          />
+          <button type="submit" class="btn primary login-submit" id="loginSubmit">
+            <span class="btn-label">Sign in</span>
+            <span class="btn-spinner" aria-hidden="true"></span>
+          </button>
+          <p class="login-error" id="loginError" hidden></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- App shell -->
+    <div id="app" class="app" hidden>
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-mark">OVENA HEALTH</span>
@@ -74,6 +107,13 @@
           </div>
           <span class="clock-date" id="clockDate">—</span>
           <span class="saved-pill" id="savedPill">Not saved yet</span>
+          <button class="btn ghost logout-btn" id="logoutBtn" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:6px;">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            Sign out
+          </button>
         </div>
       </aside>
 
@@ -85,6 +125,9 @@
         <section class="tab-panel" id="panel-margins" role="tabpanel"></section>
       </main>
     </div>
+
+    <!-- Toast for transient errors (offline, save failed) -->
+    <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
 
     <script type="module" src="js/main.js"></script>
   </body>

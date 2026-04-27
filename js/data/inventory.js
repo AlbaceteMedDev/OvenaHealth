@@ -20,7 +20,10 @@ const sockVersions = [
 ];
 
 const sizes = [1, 2, 3, 4, 5];
-const colors = ["Black", "Beige"];
+const colors = [
+  { name: "Black", code: "BLK" },
+  { name: "Beige", code: "BGE" },
+];
 
 function makeSockVariants() {
   const entries = [];
@@ -28,10 +31,10 @@ function makeSockVariants() {
     for (const size of sizes) {
       for (const color of colors) {
         entries.push({
-          sku: `CS-${version.code}-S${size}-${color[0]}`,
+          sku: `CS-${version.code}-S${size}-${color.code}`,
           product: "Compression Socks",
           category: "Compression",
-          variant: `${version.label} | Size ${size} | ${color}`,
+          variant: `${version.label} | Size ${size} | ${color.name}`,
           reorderLevel: 40,
           suggestedPrice: 32.99,
         });
