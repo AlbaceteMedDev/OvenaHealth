@@ -5,40 +5,84 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ovena Health · Commerce Portal</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Ctext x='16' y='22' font-family='-apple-system,sans-serif' font-size='16' font-weight='700' fill='white' text-anchor='middle'%3EO%3C/text%3E%3C/svg%3E" />
   </head>
   <body>
+    <!-- SVG defs reused across charts -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="area-grad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%"  stop-color="#0a0e1a" stop-opacity="0.16"/>
+          <stop offset="100%" stop-color="#0a0e1a" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="area-grad-alt" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%"  stop-color="#0f766e" stop-opacity="0.22"/>
+          <stop offset="100%" stop-color="#0f766e" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="spark-grad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%"  stop-color="#0f766e" stop-opacity="0.30"/>
+          <stop offset="100%" stop-color="#0f766e" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+    </svg>
+
     <div class="app">
-      <header class="topbar">
-        <div style="display:flex; align-items:center; gap:18px;">
-          <div class="brand">
-            <span class="brand-mark">OVENA HEALTH</span>
-            <span class="brand-name">Commerce Portal</span>
-          </div>
-          <div class="clock" id="clock" aria-live="polite">
-            <span class="clock-time" id="clockTime">—</span>
-            <span class="clock-meta" id="clockMeta">—</span>
-          </div>
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">OVENA HEALTH</span>
+          <span class="brand-name">Commerce Portal</span>
         </div>
 
-        <nav class="tabs" role="tablist" id="tabs">
-          <button class="tab" role="tab" data-tab="inventory" aria-selected="true">Inventory</button>
-          <button class="tab" role="tab" data-tab="sales" aria-selected="false">Sales</button>
-          <button class="tab" role="tab" data-tab="products" aria-selected="false">Products</button>
-          <button class="tab" role="tab" data-tab="ads" aria-selected="false">Ads</button>
-          <button class="tab" role="tab" data-tab="margins" aria-selected="false">Margins</button>
+        <nav class="nav" id="nav" role="tablist" aria-label="Sections">
+          <button class="nav-item" role="tab" data-tab="inventory" aria-selected="true">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 17l9 4 9-4"/><path d="M3 12l9 4 9-4"/>
+            </svg>
+            Inventory
+          </button>
+          <button class="nav-item" role="tab" data-tab="sales" aria-selected="false">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>
+            </svg>
+            Sales
+          </button>
+          <button class="nav-item" role="tab" data-tab="products" aria-selected="false">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/>
+              <rect x="3" y="14" width="7" height="7" rx="1.2"/><rect x="14" y="14" width="7" height="7" rx="1.2"/>
+            </svg>
+            Products
+          </button>
+          <button class="nav-item" role="tab" data-tab="ads" aria-selected="false">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>
+            </svg>
+            Ads
+          </button>
+          <button class="nav-item" role="tab" data-tab="margins" aria-selected="false">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="19" y1="5" x2="5" y2="19"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/>
+            </svg>
+            Margins
+          </button>
         </nav>
 
-        <div class="topbar-right">
+        <div class="sidebar-footer">
+          <div class="clock-row">
+            <span class="clock-time" id="clockTime">—</span>
+            <span class="clock-tz" id="clockTz">—</span>
+          </div>
+          <span class="clock-date" id="clockDate">—</span>
           <span class="saved-pill" id="savedPill">Not saved yet</span>
         </div>
-      </header>
+      </aside>
 
-      <main>
-        <section class="tab-panel active" id="panel-inventory" role="tabpanel" aria-labelledby="tab-inventory"></section>
-        <section class="tab-panel" id="panel-sales" role="tabpanel" aria-labelledby="tab-sales"></section>
-        <section class="tab-panel" id="panel-products" role="tabpanel" aria-labelledby="tab-products"></section>
-        <section class="tab-panel" id="panel-ads" role="tabpanel" aria-labelledby="tab-ads"></section>
-        <section class="tab-panel" id="panel-margins" role="tabpanel" aria-labelledby="tab-margins"></section>
+      <main class="main">
+        <section class="tab-panel active" id="panel-inventory" role="tabpanel"></section>
+        <section class="tab-panel" id="panel-sales" role="tabpanel"></section>
+        <section class="tab-panel" id="panel-products" role="tabpanel"></section>
+        <section class="tab-panel" id="panel-ads" role="tabpanel"></section>
+        <section class="tab-panel" id="panel-margins" role="tabpanel"></section>
       </main>
     </div>
 
