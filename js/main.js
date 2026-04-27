@@ -20,10 +20,30 @@ const mounts = {
 const mounted = new Set();
 
 // ─── Boot ────────────────────────────────────────────────────────────
+// Boot must always complete: if Supabase or auth are slow, we fall through
+// to the login screen after a hard timeout so the UI is never stuck.
 (async function boot() {
-  await auth.init();
+  console.info("[boot] start");
+  let timedOut = false;
+  const timeout = new Promise((resolve) =>
+    setTimeout(() => { timedOut = true; resolve(); }, 6000),
+  );
+  try {
+    await Promise.race([auth.init(), timeout]);
+  } catch (err) {
+    console.error("[boot] auth.init failed:", err);
+  }
+  if (timedOut) {
+    console.warn("[boot] auth init timed out — falling through to login");
+  }
+  console.info("[boot] authed =", auth.isAuthed());
   if (auth.isAuthed()) {
-    await showApp();
+    try {
+      await showApp();
+    } catch (err) {
+      console.error("[boot] showApp failed:", err);
+      showLogin();
+    }
   } else {
     showLogin();
   }
