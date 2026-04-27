@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ovena Health | Inventory Portal</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div>
+          <div class="brand">OVENA</div>
+          <h1>Inventory Portal</h1>
+          <p>Amazon + Shopify stock control center.</p>
+        </div>
+
+        <section class="guide-card">
+          <h2>Compression Sock Versions</h2>
+          <ul id="versionGuideList"></ul>
+          <small>Sizes 1-5 and colors Black/Beige apply to every version.</small>
+        </section>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar glass">
+          <div>
+            <h2>Live Inventory Dashboard</h2>
+            <p id="lastSaved">Not saved yet</p>
+          </div>
+          <span id="skuCount" class="badge">0 SKUs shown</span>
+        </header>
+
+        <section class="kpi-grid" id="summaryGrid"></section>
+
+        <section class="controls glass">
+          <input id="searchInput" type="search" placeholder="Search SKU, product, variant..." />
+          <select id="channelFilter" aria-label="Filter channel">
+            <option value="all">All channels</option>
+            <option value="amazon">Amazon only</option>
+            <option value="shopify">Shopify only</option>
+            <option value="both">Both channels in-stock</option>
+          </select>
+          <button id="resetBtn" type="button" class="btn muted">Reset quantities</button>
+          <button id="exportBtn" type="button" class="btn primary">Export CSV</button>
+        </section>
+
+        <section class="table-panel glass">
+          <table>
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Product</th>
+                <th>Variant</th>
+                <th>Amazon</th>
+                <th>Shopify</th>
+                <th>Total</th>
+                <th>Reorder</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="inventoryTableBody"></tbody>
+          </table>
+        </section>
+      </main>
+    </div>
+
+    <template id="rowTemplate">
+      <tr>
+        <td data-field="sku"></td>
+        <td data-field="product"></td>
+        <td data-field="variant"></td>
+        <td><input type="number" min="0" data-field="amazon" /></td>
+        <td><input type="number" min="0" data-field="shopify" /></td>
+        <td data-field="total"></td>
+        <td><input type="number" min="0" data-field="reorderLevel" /></td>
+        <td><span class="status-pill" data-field="status"></span></td>
+      </tr>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
