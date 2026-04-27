@@ -38,7 +38,7 @@ interface.
 - Silicone Foam Dressing — 4"x4", 6"x6", 8"x8"
 - Disposable Gloves
 - Wound Wash
-- Compression Socks (80 variants)
+- Compression Socks (40 variants)
   - Versions: KHC, KHO, THC, THO (knee/thigh high × closed/open toe)
   - Sizes: 1–5
   - Colors: Black, Beige
