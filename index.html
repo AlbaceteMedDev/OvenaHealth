@@ -3,81 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ovena Health | Inventory Portal</title>
+    <title>Ovena Health · Commerce Portal</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div>
-          <div class="brand">OVENA</div>
-          <h1>Inventory Portal</h1>
-          <p>Amazon + Shopify stock control center.</p>
+    <div class="app">
+      <header class="topbar">
+        <div style="display:flex; align-items:center; gap:18px;">
+          <div class="brand">
+            <span class="brand-mark">OVENA HEALTH</span>
+            <span class="brand-name">Commerce Portal</span>
+          </div>
+          <div class="clock" id="clock" aria-live="polite">
+            <span class="clock-time" id="clockTime">—</span>
+            <span class="clock-meta" id="clockMeta">—</span>
+          </div>
         </div>
 
-        <section class="guide-card">
-          <h2>Compression Sock Versions</h2>
-          <ul id="versionGuideList"></ul>
-          <small>Sizes 1-5 and colors Black/Beige apply to every version.</small>
-        </section>
-      </aside>
+        <nav class="tabs" role="tablist" id="tabs">
+          <button class="tab" role="tab" data-tab="inventory" aria-selected="true">Inventory</button>
+          <button class="tab" role="tab" data-tab="sales" aria-selected="false">Sales</button>
+          <button class="tab" role="tab" data-tab="products" aria-selected="false">Products</button>
+          <button class="tab" role="tab" data-tab="ads" aria-selected="false">Ads</button>
+          <button class="tab" role="tab" data-tab="margins" aria-selected="false">Margins</button>
+        </nav>
 
-      <main class="main-content">
-        <header class="topbar glass">
-          <div>
-            <h2>Live Inventory Dashboard</h2>
-            <p id="lastSaved">Not saved yet</p>
-          </div>
-          <span id="skuCount" class="badge">0 SKUs shown</span>
-        </header>
+        <div class="topbar-right">
+          <span class="saved-pill" id="savedPill">Not saved yet</span>
+        </div>
+      </header>
 
-        <section class="kpi-grid" id="summaryGrid"></section>
-
-        <section class="controls glass">
-          <input id="searchInput" type="search" placeholder="Search SKU, product, variant..." />
-          <select id="channelFilter" aria-label="Filter channel">
-            <option value="all">All channels</option>
-            <option value="amazon">Amazon only</option>
-            <option value="shopify">Shopify only</option>
-            <option value="both">Both channels in-stock</option>
-          </select>
-          <button id="resetBtn" type="button" class="btn muted">Reset quantities</button>
-          <button id="exportBtn" type="button" class="btn primary">Export CSV</button>
-        </section>
-
-        <section class="table-panel glass">
-          <table>
-            <thead>
-              <tr>
-                <th>SKU</th>
-                <th>Product</th>
-                <th>Variant</th>
-                <th>Amazon</th>
-                <th>Shopify</th>
-                <th>Total</th>
-                <th>Reorder</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="inventoryTableBody"></tbody>
-          </table>
-        </section>
+      <main>
+        <section class="tab-panel active" id="panel-inventory" role="tabpanel" aria-labelledby="tab-inventory"></section>
+        <section class="tab-panel" id="panel-sales" role="tabpanel" aria-labelledby="tab-sales"></section>
+        <section class="tab-panel" id="panel-products" role="tabpanel" aria-labelledby="tab-products"></section>
+        <section class="tab-panel" id="panel-ads" role="tabpanel" aria-labelledby="tab-ads"></section>
+        <section class="tab-panel" id="panel-margins" role="tabpanel" aria-labelledby="tab-margins"></section>
       </main>
     </div>
 
-    <template id="rowTemplate">
-      <tr>
-        <td data-field="sku"></td>
-        <td data-field="product"></td>
-        <td data-field="variant"></td>
-        <td><input type="number" min="0" data-field="amazon" /></td>
-        <td><input type="number" min="0" data-field="shopify" /></td>
-        <td data-field="total"></td>
-        <td><input type="number" min="0" data-field="reorderLevel" /></td>
-        <td><span class="status-pill" data-field="status"></span></td>
-      </tr>
-    </template>
-
-    <script src="app.js"></script>
+    <script type="module" src="js/main.js"></script>
   </body>
 </html>
