@@ -578,6 +578,74 @@ tbody tr.row-low td:first-child {
   padding-left: 14px;
 }
 
+/* Grouped product rows */
+tbody tr.group-row {
+  background: var(--surface-tint);
+}
+tbody tr.group-row:hover { background: #efefec; }
+
+tbody tr.group-row .group-cell {
+  padding: 10px 16px;
+  vertical-align: middle;
+}
+tbody tr.group-row .group-toggle {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+}
+tbody tr.group-row .group-toggle:hover { color: var(--accent-2); }
+tbody tr.group-row .chev {
+  color: var(--ink-3);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+tbody tr.group-row.is-open .chev { transform: rotate(-180deg); }
+
+tbody tr.group-row .group-name { color: var(--ink); }
+tbody tr.group-row .group-meta {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+  background: var(--surface);
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+}
+tbody tr.group-row .group-summary {
+  margin-top: 4px;
+  margin-left: 18px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+
+/* Indented child rows under an expanded group */
+tbody tr.is-child td:first-child {
+  padding-left: 36px;
+  position: relative;
+}
+tbody tr.is-child td:first-child::before {
+  content: "";
+  position: absolute;
+  left: 22px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+tbody tr.is-child .sku-cell { font-size: 11px; }
+
 /* Status — quiet dot + text, not loud pills */
 .status {
   display: inline-flex;
