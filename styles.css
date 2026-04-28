@@ -65,6 +65,11 @@
 
 * { box-sizing: border-box; }
 
+/* Honor the `hidden` attribute even on elements with custom display rules.
+   Without this, .boot/.login/.app stay visible because their `display:grid`
+   beats the user-agent stylesheet's `[hidden] { display: none }`. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
