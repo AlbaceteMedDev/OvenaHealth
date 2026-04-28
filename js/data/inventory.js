@@ -1,13 +1,14 @@
 // Catalog seed. Keep this in sync with the README catalog list.
 
 const coreProducts = [
-  { sku: "CWD-2X2", product: 'Collagen Wound Dressing 2"x2"', category: "Wound Care", variant: "Standard", reorderLevel: 80, suggestedPrice: 24.99 },
-  { sku: "CWD-4X4", product: 'Collagen Wound Dressing 4"x4"', category: "Wound Care", variant: "Standard", reorderLevel: 70, suggestedPrice: 39.99 },
-  { sku: "CWD-7X7", product: 'Collagen Wound Dressing 7"x7"', category: "Wound Care", variant: "Standard", reorderLevel: 60, suggestedPrice: 64.99 },
+  { sku: "CWD-2X2", product: "Collagen Wound Dressing", category: "Wound Care", variant: '2"x2"', reorderLevel: 80, suggestedPrice: 24.99 },
+  { sku: "CWD-4X4", product: "Collagen Wound Dressing", category: "Wound Care", variant: '4"x4"', reorderLevel: 70, suggestedPrice: 39.99 },
+  { sku: "CWD-7X7", product: "Collagen Wound Dressing", category: "Wound Care", variant: '7"x7"', reorderLevel: 60, suggestedPrice: 64.99 },
+  { sku: "CWD-PWD", product: "Collagen Powder", category: "Wound Care", variant: "1 Gram", reorderLevel: 75, suggestedPrice: 34.99 },
   { sku: "GAUZE-ROLL", product: "Gauze Rolls", category: "Wound Care", variant: "Standard", reorderLevel: 100, suggestedPrice: 14.99 },
-  { sku: "SFD-4X4", product: '4"x4" Silicone Foam Dressing', category: "Wound Care", variant: "Standard", reorderLevel: 75, suggestedPrice: 34.99 },
-  { sku: "SFD-6X6", product: '6"x6" Silicone Foam Dressing', category: "Wound Care", variant: "Standard", reorderLevel: 70, suggestedPrice: 49.99 },
-  { sku: "SFD-8X8", product: '8"x8" Silicone Foam Dressing', category: "Wound Care", variant: "Standard", reorderLevel: 65, suggestedPrice: 69.99 },
+  { sku: "SFD-4X4", product: "Silicone Foam Dressing", category: "Wound Care", variant: '4"x4"', reorderLevel: 75, suggestedPrice: 34.99 },
+  { sku: "SFD-6X6", product: "Silicone Foam Dressing", category: "Wound Care", variant: '6"x6"', reorderLevel: 70, suggestedPrice: 49.99 },
+  { sku: "SFD-8X8", product: "Silicone Foam Dressing", category: "Wound Care", variant: '8"x8"', reorderLevel: 65, suggestedPrice: 69.99 },
   { sku: "GLOVE-DISP", product: "Disposable Gloves", category: "Supplies", variant: "Standard", reorderLevel: 200, suggestedPrice: 19.99 },
   { sku: "WOUND-WASH", product: "Wound Wash", category: "Supplies", variant: "Standard", reorderLevel: 90, suggestedPrice: 17.99 },
 ];
@@ -20,7 +21,10 @@ const sockVersions = [
 ];
 
 const sizes = [1, 2, 3, 4, 5];
-const colors = ["Black", "Beige"];
+const colors = [
+  { name: "Black", code: "BLK" },
+  { name: "Beige", code: "BGE" },
+];
 
 function makeSockVariants() {
   const entries = [];
@@ -28,10 +32,10 @@ function makeSockVariants() {
     for (const size of sizes) {
       for (const color of colors) {
         entries.push({
-          sku: `CS-${version.code}-S${size}-${color[0]}`,
+          sku: `CS-${version.code}-S${size}-${color.code}`,
           product: "Compression Socks",
           category: "Compression",
-          variant: `${version.label} | Size ${size} | ${color}`,
+          variant: `${version.label} | Size ${size} | ${color.name}`,
           reorderLevel: 40,
           suggestedPrice: 32.99,
         });

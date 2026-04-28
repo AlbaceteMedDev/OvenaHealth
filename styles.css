@@ -3,6 +3,13 @@
    tabular numerics, polished charts, restrained color use. */
 
 :root {
+  /* Brand */
+  --brand-navy: #1a2843;
+  --brand-teal: #6e9fab;
+  --brand-teal-deep: #4a7d8a;
+  --brand-cream: #f3ecde;
+  --brand-cream-2: #ece2cf;
+
   /* Surfaces */
   --bg: #fafaf9;
   --surface: #ffffff;
@@ -58,6 +65,11 @@
 
 * { box-sizing: border-box; }
 
+/* Honor the `hidden` attribute even on elements with custom display rules.
+   Without this, .boot/.login/.app stay visible because their `display:grid`
+   beats the user-agent stylesheet's `[hidden] { display: none }`. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -108,24 +120,28 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .brand {
-  padding: 22px 22px 18px;
+  padding: 18px 22px 16px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
   border-bottom: 1px solid var(--line);
 }
-.brand-mark {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.32em;
-  color: var(--accent);
+.brand-logo {
+  width: 140px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .brand-name {
-  font-size: 16px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: -0.015em;
-  color: var(--ink);
-  margin-top: 4px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(26, 40, 67, 0.55);
+  text-align: center;
 }
 
 .nav {
@@ -562,6 +578,119 @@ tbody tr.row-low td:first-child {
   padding-left: 14px;
 }
 
+/* Grouped product rows */
+tbody tr.group-row {
+  background: var(--surface-tint);
+}
+tbody tr.group-row:hover { background: #efefec; }
+
+tbody tr.group-row .group-cell {
+  padding: 10px 16px;
+  vertical-align: middle;
+}
+tbody tr.group-row .group-toggle {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+}
+tbody tr.group-row .group-toggle:hover { color: var(--accent-2); }
+tbody tr.group-row .chev {
+  color: var(--ink-3);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+tbody tr.group-row.is-open .chev { transform: rotate(-180deg); }
+
+tbody tr.group-row .group-name { color: var(--ink); }
+tbody tr.group-row .group-meta {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+  background: var(--surface);
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+}
+tbody tr.group-row .group-summary {
+  margin-top: 4px;
+  margin-left: 18px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+
+/* Indented child rows under an expanded group */
+tbody tr.is-child td:first-child {
+  padding-left: 36px;
+  position: relative;
+}
+tbody tr.is-child td:first-child::before {
+  content: "";
+  position: absolute;
+  left: 22px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+tbody tr.is-child .sku-cell { font-size: 11px; }
+
+/* Compact compression sock key — sits below the inventory table */
+.sock-key {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 12px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-xs);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  letter-spacing: -0.005em;
+}
+.sock-key-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-right: 14px;
+  border-right: 1px solid var(--line);
+}
+.sock-key-item { color: var(--ink-2); }
+.sock-key-item b {
+  color: var(--ink);
+  font-weight: 600;
+  margin-right: 4px;
+  letter-spacing: 0.04em;
+}
+.sock-key-foot {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+@media (max-width: 980px) {
+  .sock-key { font-size: 11px; }
+  .sock-key-foot { margin-left: 0; border-left: 0; padding-left: 0; }
+  .sock-key-title { border-right: 0; padding-right: 0; }
+}
+
 /* Status — quiet dot + text, not loud pills */
 .status {
   display: inline-flex;
@@ -759,6 +888,194 @@ tbody tr.row-low td:first-child {
 }
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ──────────────────────────── Boot / Login ──────────────────────────── */
+.boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.4) 0%, transparent 50%),
+    radial-gradient(circle at 80% 90%, var(--brand-cream-2) 0%, transparent 55%),
+    var(--brand-cream);
+  z-index: 100;
+  animation: fade-in 0.25s ease;
+}
+.boot-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+.boot-logo {
+  width: 220px;
+  max-width: 60vw;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  opacity: 0;
+  animation: fade-in 0.4s ease 0.05s forwards;
+}
+.boot-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(26, 40, 67, 0.15);
+  border-top-color: var(--brand-teal-deep);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  opacity: 0;
+  animation-name: spin, fade-in;
+  animation-duration: 0.8s, 0.4s;
+  animation-timing-function: linear, ease;
+  animation-iteration-count: infinite, 1;
+  animation-delay: 0s, 0.2s;
+  animation-fill-mode: none, forwards;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fade-in { to { opacity: 1; } }
+
+.login {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 15% 5%, rgba(255, 255, 255, 0.6) 0%, transparent 45%),
+    radial-gradient(circle at 90% 95%, var(--brand-cream-2) 0%, transparent 55%),
+    var(--brand-cream);
+  z-index: 50;
+  animation: fade-in 0.3s ease;
+}
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid rgba(26, 40, 67, 0.10);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 24px 48px -12px rgba(26, 40, 67, 0.18),
+    0 4px 12px -2px rgba(26, 40, 67, 0.06);
+  padding: 36px 36px 32px;
+  position: relative;
+}
+.login-logo {
+  display: block;
+  width: 200px;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto 20px;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.login-sub {
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+  line-height: 1.5;
+  text-align: center;
+}
+.login-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 14px;
+  background: var(--brand-cream);
+  border: 1px solid rgba(26, 40, 67, 0.12);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  letter-spacing: 0.02em;
+  color: var(--brand-navy);
+}
+.login-input::placeholder { color: rgba(26, 40, 67, 0.4); }
+.login-input:focus {
+  background: var(--surface);
+  border-color: var(--brand-teal-deep);
+  box-shadow: 0 0 0 3px rgba(110, 159, 171, 0.18);
+  outline: none;
+}
+.login-submit {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--brand-navy);
+  color: #fff;
+  border: 1px solid var(--brand-navy);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+.login-submit:hover { background: #0f1d35; }
+.login-submit:active { transform: translateY(1px); }
+.login-submit:disabled { cursor: progress; }
+.login-submit .btn-spinner {
+  display: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.login-submit.loading .btn-label { opacity: 0.6; }
+.login-submit.loading .btn-spinner { display: inline-block; }
+.login-error {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  background: rgba(185, 28, 28, 0.06);
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  border-radius: var(--radius-sm);
+  color: var(--low);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.login-foot {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 11.5px;
+  color: rgba(26, 40, 67, 0.5);
+  letter-spacing: 0.02em;
+}
+
+/* Logout button in sidebar footer */
+.logout-btn {
+  margin-top: 14px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
+}
+.logout-btn:hover { color: var(--ink); }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  letter-spacing: -0.005em;
+  box-shadow: var(--shadow-lg);
+  max-width: 360px;
+  z-index: 80;
+  animation: toast-in 0.18s ease;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
