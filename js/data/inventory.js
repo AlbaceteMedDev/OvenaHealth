@@ -4,6 +4,7 @@ const coreProducts = [
   { sku: "CWD-2X2", product: 'Collagen Wound Dressing 2"x2"', category: "Wound Care", variant: "Standard", reorderLevel: 80, suggestedPrice: 24.99 },
   { sku: "CWD-4X4", product: 'Collagen Wound Dressing 4"x4"', category: "Wound Care", variant: "Standard", reorderLevel: 70, suggestedPrice: 39.99 },
   { sku: "CWD-7X7", product: 'Collagen Wound Dressing 7"x7"', category: "Wound Care", variant: "Standard", reorderLevel: 60, suggestedPrice: 64.99 },
+  { sku: "CWD-PWD", product: "Collagen Powder", category: "Wound Care", variant: "Standard", reorderLevel: 75, suggestedPrice: 34.99 },
   { sku: "GAUZE-ROLL", product: "Gauze Rolls", category: "Wound Care", variant: "Standard", reorderLevel: 100, suggestedPrice: 14.99 },
   { sku: "SFD-4X4", product: '4"x4" Silicone Foam Dressing', category: "Wound Care", variant: "Standard", reorderLevel: 75, suggestedPrice: 34.99 },
   { sku: "SFD-6X6", product: '6"x6" Silicone Foam Dressing', category: "Wound Care", variant: "Standard", reorderLevel: 70, suggestedPrice: 49.99 },

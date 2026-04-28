@@ -69,6 +69,7 @@ rotate it:
 ## Catalog
 
 - Collagen Wound Dressing — 2"x2", 4"x4", 7"x7"
+- Collagen Powder
 - Gauze Rolls
 - Silicone Foam Dressing — 4"x4", 6"x6", 8"x8"
 - Disposable Gloves
@@ -78,7 +79,7 @@ rotate it:
   - Sizes: 1–5
   - Colors: Black (BLK), Beige (BGE)
 
-49 total SKUs.
+50 total SKUs.
 
 ## Run locally
 

@@ -220,7 +220,8 @@ function breakdownText(group) {
 
 function shortVariantLabel(row) {
   // Strip off the product family prefix from the SKU for a compact label.
-  // CWD-2X2 → "2x2"; SFD-4X4 → "4x4"; otherwise fall back to the SKU.
+  // CWD-2X2 → "2x2"; SFD-4X4 → "4x4"; CWD-PWD → "Powder"; otherwise SKU.
+  if (row.sku === "CWD-PWD") return "Powder";
   const m = row.sku.match(/^(?:CWD|SFD)-(\d+X\d+)$/);
   if (m) return m[1].toLowerCase().replace("x", "×");
   return row.sku;

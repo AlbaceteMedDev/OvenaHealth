@@ -73,6 +73,7 @@ insert into public.inventory_state (sku, reorder_level) values
   ('CWD-2X2', 80),
   ('CWD-4X4', 70),
   ('CWD-7X7', 60),
+  ('CWD-PWD', 75),
   ('GAUZE-ROLL', 100),
   ('SFD-4X4', 75),
   ('SFD-6X6', 70),
