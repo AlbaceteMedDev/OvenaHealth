@@ -22,63 +22,52 @@ export function mountInventory(el) {
 
     <div class="kpi-grid" id="invKpis"></div>
 
-    <div class="row-2">
-      <div class="card">
-        <div class="card-head">
-          <h3>Catalog</h3>
-          <span class="hint" id="invCount">—</span>
-        </div>
-        <div class="card-body">
-          <div class="controls" style="margin-bottom: 14px;">
-            <input type="search" id="invSearch" placeholder="Search SKU, product, variant, category…" />
-            <select id="invChannel">
-              <option value="all">All channels</option>
-              <option value="amazon">Amazon only</option>
-              <option value="shopify">Shopify only</option>
-              <option value="both">Stocked on both</option>
-            </select>
-            <span style="flex:1"></span>
-            <button class="btn ghost" id="invExpandAll">Expand all</button>
-            <button class="btn ghost danger" id="invReset">Reset</button>
-            <button class="btn primary" id="invExport">Export CSV</button>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>SKU</th>
-                <th>Product</th>
-                <th>Variant</th>
-                <th class="num">Amazon</th>
-                <th class="num">Shopify</th>
-                <th class="num">Total</th>
-                <th class="num">Reorder</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="invBody"></tbody>
-          </table>
+    <div class="card" style="margin-bottom: 18px;">
+      <div class="card-head">
+        <h3>Catalog</h3>
+        <span class="hint" id="invCount">—</span>
+      </div>
+      <div class="card-body">
+        <div class="controls" style="margin-bottom: 14px;">
+          <input type="search" id="invSearch" placeholder="Search SKU, product, variant, category…" />
+          <select id="invChannel">
+            <option value="all">All channels</option>
+            <option value="amazon">Amazon only</option>
+            <option value="shopify">Shopify only</option>
+            <option value="both">Stocked on both</option>
+          </select>
+          <span style="flex:1"></span>
+          <button class="btn ghost" id="invExpandAll">Expand all</button>
+          <button class="btn ghost danger" id="invReset">Reset</button>
+          <button class="btn primary" id="invExport">Export CSV</button>
         </div>
       </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Product</th>
+              <th>Variant</th>
+              <th class="num">Amazon</th>
+              <th class="num">Shopify</th>
+              <th class="num">Total</th>
+              <th class="num">Reorder</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="invBody"></tbody>
+        </table>
+      </div>
+    </div>
 
-      <div class="card">
-        <div class="card-head"><h3>Compression sock guide</h3></div>
-        <div class="card-body">
-          <div style="display:grid; gap:12px;">
-            ${sockVersionDefinitions
-              .map((v) => `
-                <div>
-                  <div style="font-weight:600; color: var(--ink); font-size:13px;">${v.name}</div>
-                  <div class="muted" style="font-size:12.5px; line-height:1.45; margin-top:2px;">${v.description.replace(v.name + " — ", "")}</div>
-                </div>`)
-              .join("")}
-          </div>
-          <p class="muted" style="font-size: 12px; margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line);">
-            Sizes 1–5 and colors Black / Beige apply to every version. <strong style="color: var(--ink-2);">40 sock variants</strong> in the catalog.
-          </p>
-        </div>
-      </div>
+    <div class="sock-key">
+      <span class="sock-key-title">Compression sock versions</span>
+      ${sockVersionDefinitions
+        .map((v) => `
+          <span class="sock-key-item"><b>${v.name}</b> ${v.description.replace(v.name + " — ", "").replace(/\.$/, "")}</span>`)
+        .join("")}
+      <span class="sock-key-foot">Sizes 1–5 · Black / Beige · 40 variants</span>
     </div>
   `;
 
