@@ -4,14 +4,16 @@ import { fmtTime, fmtDate, fmtTzAbbrev, getTimeZone } from "./format.js";
 import { subscribe, getState, loadInitial, onError, resetCache } from "./state.js";
 import * as auth from "./auth.js";
 import { mountInventory } from "./tabs/inventory.js";
+import { mountScan } from "./tabs/scan.js";
 import { mountSales } from "./tabs/sales.js";
 import { mountProducts } from "./tabs/products.js";
 import { mountAds } from "./tabs/ads.js";
 import { mountMargins } from "./tabs/margins.js";
 
-const tabs = ["inventory", "sales", "products", "ads", "margins"];
+const tabs = ["inventory", "scan", "sales", "products", "ads", "margins"];
 const mounts = {
   inventory: mountInventory,
+  scan: mountScan,
   sales: mountSales,
   products: mountProducts,
   ads: mountAds,

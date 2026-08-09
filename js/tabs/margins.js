@@ -119,7 +119,7 @@ function buildRows() {
   return seedInventory.map((row) => {
     const s = inventory[row.sku];
     const sale = sales.get(row.sku) || { units: 0, revenue: 0 };
-    const stockOnHand = s.amazon + s.shopify;
+    const stockOnHand = s.amazon + s.warehouse;
     const retail = row.suggestedPrice;
     const cogs = s.cogs || 0;
     const marginPerUnit = retail - cogs;

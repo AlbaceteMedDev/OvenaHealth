@@ -3,6 +3,7 @@
 import { seedInventory, sockVersionDefinitions } from "../data/inventory.js";
 import { getState, updateRow, resetQuantities, subscribe } from "../state.js";
 import { fmtNumber } from "../format.js";
+import { openAmazonImport } from "../importer.js";
 
 let panelEl = null;
 let filterState = { q: "", channel: "all" };
@@ -14,7 +15,7 @@ export function mountInventory(el) {
     <div class="tab-header">
       <div class="titles">
         <h2>Inventory</h2>
-        <p>Live stock across Amazon and Shopify. Edit quantities inline; everything saves locally.</p>
+        <p>Live stock across Amazon and the warehouse. Scan on the Scan tab, import Amazon reports here, or edit inline.</p>
       </div>
     </div>
 
@@ -33,11 +34,12 @@ export function mountInventory(el) {
           <select id="invChannel">
             <option value="all">All channels</option>
             <option value="amazon">Amazon only</option>
-            <option value="shopify">Shopify only</option>
+            <option value="warehouse">Warehouse only</option>
             <option value="both">Stocked on both</option>
           </select>
           <span style="flex:1"></span>
           <button class="btn ghost" id="invExpandAll">Expand all</button>
+          <button class="btn ghost" id="invImport">Import Amazon report</button>
           <button class="btn ghost danger" id="invReset">Reset</button>
           <button class="btn primary" id="invExport">Export CSV</button>
         </div>
@@ -50,7 +52,7 @@ export function mountInventory(el) {
               <th>Product</th>
               <th>Variant</th>
               <th class="num">Amazon</th>
-              <th class="num">Shopify</th>
+              <th class="num">Warehouse</th>
               <th class="num">Total</th>
               <th class="num">Reorder</th>
               <th>Status</th>
@@ -80,8 +82,9 @@ export function mountInventory(el) {
     renderTable();
   });
   el.querySelector("#invReset").addEventListener("click", () => {
-    if (confirm("Reset every Amazon and Shopify quantity to 0?")) resetQuantities();
+    if (confirm("Reset every Amazon and Warehouse quantity to 0?")) resetQuantities();
   });
+  el.querySelector("#invImport").addEventListener("click", openAmazonImport);
   el.querySelector("#invExport").addEventListener("click", exportCsv);
   el.querySelector("#invExpandAll").addEventListener("click", () => {
     const groups = buildGroups();
@@ -118,10 +121,10 @@ function rowsWithState() {
     return {
       ...row,
       amazon: s.amazon,
-      shopify: s.shopify,
+      warehouse: s.warehouse,
       reorderLevel: s.reorderLevel,
-      total: s.amazon + s.shopify,
-      status: statusOf(s.amazon + s.shopify, s.reorderLevel),
+      total: s.amazon + s.warehouse,
+      status: statusOf(s.amazon + s.warehouse, s.reorderLevel),
     };
   });
 }
@@ -179,10 +182,10 @@ function applyFilter(row) {
     row.variant.toLowerCase().includes(q) ||
     row.category.toLowerCase().includes(q);
   let matchesCh = true;
-  const a = row.amazon > 0, sh = row.shopify > 0;
+  const a = row.amazon > 0, wh = row.warehouse > 0;
   if (channel === "amazon") matchesCh = a;
-  else if (channel === "shopify") matchesCh = sh;
-  else if (channel === "both") matchesCh = a && sh;
+  else if (channel === "warehouse") matchesCh = wh;
+  else if (channel === "both") matchesCh = a && wh;
   return matches && matchesCh;
 }
 
@@ -246,16 +249,16 @@ function renderKpis() {
   const totals = all.reduce(
     (acc, r) => {
       acc.amazon += r.amazon;
-      acc.shopify += r.shopify;
+      acc.warehouse += r.warehouse;
       if (r.status === "Low") acc.low++;
       if (r.status === "Watch") acc.watch++;
       return acc;
     },
-    { amazon: 0, shopify: 0, low: 0, watch: 0 },
+    { amazon: 0, warehouse: 0, low: 0, watch: 0 },
   );
   const cards = [
     { label: "Amazon Units", value: fmtNumber(totals.amazon) },
-    { label: "Shopify Units", value: fmtNumber(totals.shopify) },
+    { label: "Warehouse Units", value: fmtNumber(totals.warehouse) },
     { label: "Low Stock", value: fmtNumber(totals.low) },
     { label: "On Watch", value: fmtNumber(totals.watch) },
   ];
@@ -302,8 +305,8 @@ function renderTable() {
 
     const isOpen = expanded.has(group.key);
     const aggAmazon = group.children.reduce((s, c) => s + c.amazon, 0);
-    const aggShopify = group.children.reduce((s, c) => s + c.shopify, 0);
-    const aggTotal = aggAmazon + aggShopify;
+    const aggWarehouse = group.children.reduce((s, c) => s + c.warehouse, 0);
+    const aggTotal = aggAmazon + aggWarehouse;
     const status = worstStatus(group.children);
     const breakdown = breakdownText(group);
     const variantCount = group.children.length;
@@ -321,7 +324,7 @@ function renderTable() {
           <div class="group-summary">${breakdown}</div>
         </td>
         <td class="num ink"><strong>${fmtNumber(aggAmazon)}</strong></td>
-        <td class="num ink"><strong>${fmtNumber(aggShopify)}</strong></td>
+        <td class="num ink"><strong>${fmtNumber(aggWarehouse)}</strong></td>
         <td class="num ink"><strong>${fmtNumber(aggTotal)}</strong></td>
         <td class="num muted">—</td>
         <td><span class="status ${statusClass(status)}">${status}</span></td>
@@ -371,7 +374,7 @@ function renderLeafRow(r, indented = false) {
       <td class="ink">${escapeHtml(r.product)}</td>
       <td class="muted">${escapeHtml(r.variant)}</td>
       <td class="num"><input type="number" min="0" data-field="amazon" value="${r.amazon}" /></td>
-      <td class="num"><input type="number" min="0" data-field="shopify" value="${r.shopify}" /></td>
+      <td class="num"><input type="number" min="0" data-field="warehouse" value="${r.warehouse}" /></td>
       <td class="num ink"><strong>${fmtNumber(r.total)}</strong></td>
       <td class="num"><input type="number" min="0" data-field="reorderLevel" value="${r.reorderLevel}" /></td>
       <td><span class="status ${statusClass(r.status)}">${r.status}</span></td>
@@ -383,9 +386,9 @@ function renderLeafRow(r, indented = false) {
 function exportCsv() {
   const all = rowsWithState();
   const rows = all.filter(applyFilter);
-  const header = ["SKU", "Product", "Category", "Variant", "Amazon", "Shopify", "Total", "Reorder", "Status"];
+  const header = ["SKU", "Product", "Category", "Variant", "Amazon", "Warehouse", "Total", "Reorder", "Status"];
   const lines = [header, ...rows.map((r) => [
-    r.sku, r.product, r.category, r.variant, r.amazon, r.shopify, r.total, r.reorderLevel, r.status,
+    r.sku, r.product, r.category, r.variant, r.amazon, r.warehouse, r.total, r.reorderLevel, r.status,
   ])];
   const csv = lines.map((l) => l.map(csvSafe).join(",")).join("\n");
   download(csv, `ovena_inventory_${new Date().toISOString().slice(0, 10)}.csv`);

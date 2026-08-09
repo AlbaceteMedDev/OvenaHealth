@@ -6,11 +6,14 @@ import { seedInventory } from "./data/inventory.js";
 import { supabase } from "./supabase.js";
 
 // In-memory cache mirroring the inventory_state Supabase table.
+// `warehouse` persists to the legacy shopify_qty column — the warehouse
+// fulfills Shopify, so the column was renamed in the UI only to avoid a
+// breaking schema change.
 const initial = {
   inventory: Object.fromEntries(
     seedInventory.map((row) => [
       row.sku,
-      { amazon: 0, shopify: 0, reorderLevel: row.reorderLevel, cogs: 0 },
+      { amazon: 0, warehouse: 0, reorderLevel: row.reorderLevel, cogs: 0 },
     ]),
   ),
   lastSavedAt: null,
@@ -57,7 +60,7 @@ export async function loadInitial() {
     if (state.inventory[row.sku]) {
       state.inventory[row.sku] = {
         amazon: row.amazon_qty ?? 0,
-        shopify: row.shopify_qty ?? 0,
+        warehouse: row.shopify_qty ?? 0,
         reorderLevel: row.reorder_level ?? state.inventory[row.sku].reorderLevel,
         cogs: Number(row.cogs ?? 0),
       };
@@ -89,11 +92,37 @@ export function updateRow(sku, patch) {
   });
 }
 
+// Apply one warehouse scan: adjust the count and append to the scan_events
+// audit log. `qty` is units-per-scan for receive/pick, or the counted shelf
+// total for count mode. Returns {before, after, delta} or null for an
+// unknown SKU.
+export function applyScan(sku, mode, qty, barcode = null) {
+  const current = state.inventory[sku];
+  if (!current) return null;
+  const before = current.warehouse;
+  let after = before;
+  if (mode === "receive") after = before + qty;
+  else if (mode === "pick") after = Math.max(0, before - qty);
+  else if (mode === "count") after = Math.max(0, qty);
+  const delta = after - before;
+
+  updateRow(sku, { warehouse: after });
+
+  void supabase
+    .from("scan_events")
+    .insert([{ sku, barcode, mode, delta, qty_after: after }])
+    .then(({ error }) => {
+      if (error) notifyError(`Scan log failed: ${error.message}`);
+    });
+
+  return { before, after, delta };
+}
+
 export function resetQuantities() {
   const previous = clone(state.inventory);
   for (const sku of Object.keys(state.inventory)) {
     state.inventory[sku].amazon = 0;
-    state.inventory[sku].shopify = 0;
+    state.inventory[sku].warehouse = 0;
   }
   state.lastSavedAt = new Date().toISOString();
   notify();
@@ -115,7 +144,7 @@ async function persistRow(sku, row) {
         {
           sku,
           amazon_qty: row.amazon,
-          shopify_qty: row.shopify,
+          shopify_qty: row.warehouse,
           reorder_level: row.reorderLevel,
           cogs: row.cogs,
         },
@@ -132,7 +161,7 @@ async function persistMany(rows) {
       rows.map((r) => ({
         sku: r.sku,
         amazon_qty: r.amazon,
-        shopify_qty: r.shopify,
+        shopify_qty: r.warehouse,
         reorder_level: r.reorderLevel,
         cogs: r.cogs,
       })),
@@ -144,7 +173,7 @@ async function persistMany(rows) {
 function sanitizePatch(patch) {
   const out = {};
   if ("amazon" in patch) out.amazon = toInt(patch.amazon);
-  if ("shopify" in patch) out.shopify = toInt(patch.shopify);
+  if ("warehouse" in patch) out.warehouse = toInt(patch.warehouse);
   if ("reorderLevel" in patch) out.reorderLevel = toInt(patch.reorderLevel);
   if ("cogs" in patch) out.cogs = toFloat(patch.cogs);
   return out;
