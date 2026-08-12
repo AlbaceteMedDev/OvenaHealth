@@ -1,0 +1,277 @@
+// Shopify Admin API client — storefront sales, net of refunds.
+//
+// Deliberately built on the `orders` query rather than ShopifyQL. ShopifyQL
+// (`shopifyqlQuery`) is convenient but its availability has moved around
+// between API versions, whereas `orders` + `lineItems` is stable and — more
+// importantly — exposes `currentQuantity`, which is what makes refunds
+// visible. A line item that was fully refunded keeps its original
+// `quantity` but drops to `currentQuantity: 0`, so net revenue collapses to
+// zero exactly as it should.
+//
+// Required env:
+//   SHOPIFY_STORE_DOMAIN  e.g. c5s06e-3n.myshopify.com
+//   SHOPIFY_ADMIN_TOKEN   Admin API access token (shpat_…) with read_orders
+//   SHOPIFY_API_VERSION   optional, default 2025-01
+
+const DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
+const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
+const VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
+
+export class ShopifyError extends Error {
+  constructor(message, { status = null, body = null } = {}) {
+    super(message);
+    this.name = "ShopifyError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export function isConfigured() {
+  return Boolean(DOMAIN && TOKEN);
+}
+
+async function graphql(query, variables = {}) {
+  if (!isConfigured()) {
+    throw new ShopifyError("SHOPIFY_STORE_DOMAIN / SHOPIFY_ADMIN_TOKEN are not set");
+  }
+  const res = await fetch(`https://${DOMAIN}/admin/api/${VERSION}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Shopify-Access-Token": TOKEN,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  // Read as text first: a throttled or errored Shopify response is not
+  // always JSON, and `.json()` swallowing that would turn a diagnosable
+  // failure into "cannot read properties of null".
+  const text = await res.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    throw new ShopifyError(
+      `Shopify returned non-JSON (${res.status}): ${text.slice(0, 200)}`,
+      { status: res.status },
+    );
+  }
+
+  if (!res.ok) {
+    throw new ShopifyError(`Shopify Admin API failed (${res.status}): ${text.slice(0, 200)}`, {
+      status: res.status,
+      body,
+    });
+  }
+  if (body?.errors?.length) {
+    throw new ShopifyError(`Shopify GraphQL error: ${body.errors[0].message}`, { body: body.errors });
+  }
+  if (!body?.data) {
+    throw new ShopifyError(`Shopify returned no data payload (${res.status})`, { body });
+  }
+  return body.data;
+}
+
+// ─── Page sizes are cost-bound, not taste ────────────────────────────
+// Shopify rejects a query whose *requested* cost exceeds 1000 points,
+// before it executes. Connections cost `2 + first x nodeCost`, and the
+// nesting multiplies: each LineItem here is ~6 points (two MoneyBags at 2
+// each, product at 1, the node itself at 1), so
+//
+//   orders(first:N) = 2 + N x (1 + 2 + N_line x 6)
+//
+// An earlier draft used first:50 / first:100, which prices at roughly
+// 30,000 points — every single sync would have failed with
+// MAX_COST_EXCEEDED. At 5 / 15 the request costs ~467, a comfortable
+// margin under the cap even if Shopify's node accounting differs from the
+// estimate above. Smaller pages just mean more round trips, and this store
+// has fewer than a hundred orders in the reporting window.
+const ORDER_PAGE_SIZE = 5;
+const LINE_ITEM_PAGE_SIZE = 15;
+
+const ORDERS_QUERY = `
+  query Orders($cursor: String, $q: String!, $orderPage: Int!, $linePage: Int!) {
+    orders(first: $orderPage, after: $cursor, query: $q, sortKey: CREATED_AT) {
+      pageInfo { hasNextPage endCursor }
+      edges {
+        node {
+          id
+          name
+          createdAt
+          cancelledAt
+          currencyCode
+          lineItems(first: $linePage) {
+            pageInfo { hasNextPage }
+            edges {
+              node {
+                title
+                variantTitle
+                quantity
+                currentQuantity
+                originalTotalSet { shopMoney { amount } }
+                discountedTotalSet { shopMoney { amount } }
+                product { id }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+function money(node) {
+  return Number(node?.shopMoney?.amount ?? 0) || 0;
+}
+
+// Pull every order created on or after `sinceIso` (YYYY-MM-DD).
+export async function fetchOrdersSince(sinceIso) {
+  const q = `created_at:>='${sinceIso}'`;
+  const orders = [];
+  const truncated = [];
+  let cursor = null;
+  let guard = 0;
+
+  do {
+    const data = await graphql(ORDERS_QUERY, {
+      cursor,
+      q,
+      orderPage: ORDER_PAGE_SIZE,
+      linePage: LINE_ITEM_PAGE_SIZE,
+    });
+    const conn = data?.orders;
+    if (!conn) break;
+
+    for (const edge of conn.edges) {
+      const node = edge.node;
+      // An order with more line items than one page holds would be counted
+      // short. Surface it rather than silently under-reporting revenue.
+      if (node.lineItems?.pageInfo?.hasNextPage) truncated.push(node.name || node.id);
+      orders.push(node);
+    }
+
+    cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+    guard += 1;
+    // Admin API is cost-throttled; a short pause keeps large backfills from
+    // burning the leaky bucket.
+    if (cursor) await new Promise((r) => setTimeout(r, 250));
+  } while (cursor && guard < 500);
+
+  if (cursor) {
+    throw new ShopifyError(
+      `Order pagination hit the ${guard}-page guard with more results pending. Narrow the window with ?since=.`,
+    );
+  }
+
+  orders.truncatedLineItems = truncated;
+  return orders;
+}
+
+// Collapse orders into per-day, per-product rows and per-day totals.
+//
+// `isExcluded(title)` drops line items we don't want counted anywhere —
+// currently the discontinued Juzo listings. Excluded lines are removed
+// before totals are computed, so an order containing only excluded items
+// contributes nothing at all (not even to the order count).
+export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC" } = {}) {
+  const dayFmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const products = new Map();
+  const totals = new Map();
+  let excludedLines = 0;
+
+  for (const order of orders) {
+    if (order.cancelledAt) continue;
+
+    const date = dayFmt.format(new Date(order.createdAt));
+    const currency = order.currencyCode || "USD";
+
+    let orderCounted = false;
+
+    for (const edge of order.lineItems?.edges || []) {
+      const li = edge.node;
+      if (isExcluded(li.title)) {
+        excludedLines += 1;
+        continue;
+      }
+
+      const qty = Number(li.quantity) || 0;
+      const netQty = Number(li.currentQuantity ?? qty) || 0;
+      const gross = money(li.originalTotalSet);
+      const discounted = money(li.discountedTotalSet);
+      // Refunds are expressed by currentQuantity dropping, so scale the
+      // discounted total by the share of units still standing.
+      const net = qty > 0 ? discounted * (netQty / qty) : 0;
+
+      const key = `${date}|${li.title}|${li.variantTitle || ""}`;
+      const slot = products.get(key) || {
+        date,
+        product_title: li.title || "",
+        variant_title: li.variantTitle || "",
+        product_id: li.product?.id || null,
+        gross_sales: 0,
+        discounts: 0,
+        net_sales: 0,
+        quantity: 0,
+        net_quantity: 0,
+        orders: 0,
+        currency,
+      };
+      slot.gross_sales += gross;
+      slot.discounts += gross - discounted;
+      slot.net_sales += net;
+      slot.quantity += qty;
+      slot.net_quantity += netQty;
+      slot.orders += 1;
+      products.set(key, slot);
+
+      const t = totals.get(date) || {
+        date,
+        gross_sales: 0,
+        discounts: 0,
+        refunds: 0,
+        net_sales: 0,
+        orders: 0,
+        units: 0,
+        currency,
+      };
+      t.gross_sales += gross;
+      t.discounts += gross - discounted;
+      t.net_sales += net;
+      t.refunds += discounted - net;
+      t.units += netQty;
+      if (!orderCounted) {
+        t.orders += 1;
+        orderCounted = true;
+      }
+      totals.set(date, t);
+    }
+  }
+
+  const round = (n) => Math.round(n * 100) / 100;
+  const stamp = new Date().toISOString();
+
+  return {
+    excludedLines,
+    productRows: [...products.values()].map((r) => ({
+      ...r,
+      gross_sales: round(r.gross_sales),
+      discounts: round(r.discounts),
+      net_sales: round(r.net_sales),
+      synced_at: stamp,
+    })),
+    totalRows: [...totals.values()].map((r) => ({
+      ...r,
+      gross_sales: round(r.gross_sales),
+      discounts: round(r.discounts),
+      refunds: round(r.refunds),
+      net_sales: round(r.net_sales),
+      synced_at: stamp,
+    })),
+  };
+}

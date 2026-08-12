@@ -1,21 +1,33 @@
 // Inventory tab — grouped catalog table with collapsible product families.
+//
+// The Amazon column has two modes. Once the SP-API sync has run, a listed
+// SKU shows its real FBA fulfillable quantity (read-only, with inbound
+// alongside). Until then — or for SKUs Amazon doesn't return — it falls back
+// to the manually-edited number, so the existing workflow keeps working.
 
-import { seedInventory, sockVersionDefinitions } from "../data/inventory.js";
+import { seedInventory } from "../data/inventory.js";
 import { getState, updateRow, resetQuantities, subscribe } from "../state.js";
+import { fetchFbaInventory, fetchSyncStatus } from "../data/live.js";
 import { fmtNumber } from "../format.js";
 import { openAmazonImport } from "../importer.js";
+import { syncStateFor, syncBadge, syncLine } from "../ui.js";
 
 let panelEl = null;
 let filterState = { q: "", channel: "all" };
 const expanded = new Set(); // group keys currently expanded
+
+// SKU → { fulfillable, inbound, reserved, unfulfillable }. Empty until the
+// FBA sync has run at least once.
+let fbaBySku = new Map();
 
 export function mountInventory(el) {
   panelEl = el;
   el.innerHTML = `
     <div class="tab-header">
       <div class="titles">
-        <h2>Inventory</h2>
-        <p>Live stock across Amazon and the warehouse. Scan on the Scan tab, import Amazon reports here, or edit inline.</p>
+        <h2>Inventory <span id="invBadge"></span></h2>
+        <p>FBA stock from Amazon, warehouse stock from scans. Scan on the Scan tab, import Amazon reports here, or edit inline.</p>
+        <div id="invSync"></div>
       </div>
     </div>
 
@@ -30,10 +42,12 @@ export function mountInventory(el) {
       </div>
       <div class="card-body">
         <div class="controls" style="margin-bottom: 14px;">
-          <input type="search" id="invSearch" placeholder="Search SKU, product, variant, category…" />
+          <input type="search" id="invSearch" placeholder="Search SKU, ASIN, product, variant, category…" />
           <select id="invChannel">
-            <option value="all">All channels</option>
-            <option value="amazon">Amazon only</option>
+            <option value="all">All SKUs</option>
+            <option value="listed">Listed on Amazon</option>
+            <option value="unlisted">Not listed</option>
+            <option value="amazon">Amazon stock only</option>
             <option value="warehouse">Warehouse only</option>
             <option value="both">Stocked on both</option>
           </select>
@@ -52,6 +66,7 @@ export function mountInventory(el) {
               <th>Product</th>
               <th>Variant</th>
               <th class="num">Amazon</th>
+              <th class="num">Inbound</th>
               <th class="num">Warehouse</th>
               <th class="num">Total</th>
               <th class="num">Reorder</th>
@@ -64,12 +79,11 @@ export function mountInventory(el) {
     </div>
 
     <div class="sock-key">
-      <span class="sock-key-title">Compression sock versions</span>
-      ${sockVersionDefinitions
-        .map((v) => `
-          <span class="sock-key-item"><b>${v.name}</b> ${v.description.replace(v.name + " — ", "").replace(/\.$/, "")}</span>`)
-        .join("")}
-      <span class="sock-key-foot">Sizes 1–5 · Black / Beige · 40 variants</span>
+      <span class="sock-key-title">Amazon catalog</span>
+      <span class="sock-key-item"><b>HC-ROLL</b> Hydrocolloid Roll, 5 ft and 16 ft</span>
+      <span class="sock-key-item"><b>CS-KHC</b> Compression Socks, knee high closed toe, black, S–XL</span>
+      <span class="sock-key-item"><b>SOCK-AID</b> Sock Aid Device</span>
+      <span class="sock-key-foot">7 live SKUs on Amazon.com · wound-care line stocked but not listed</span>
     </div>
   `;
 
@@ -82,7 +96,9 @@ export function mountInventory(el) {
     renderTable();
   });
   el.querySelector("#invReset").addEventListener("click", () => {
-    if (confirm("Reset every Amazon and Warehouse quantity to 0?")) resetQuantities();
+    if (confirm("Reset every manual Amazon and Warehouse quantity to 0?\n\nLive FBA numbers are not affected — they come from Amazon.")) {
+      resetQuantities();
+    }
   });
   el.querySelector("#invImport").addEventListener("click", openAmazonImport);
   el.querySelector("#invExport").addEventListener("click", exportCsv);
@@ -110,6 +126,40 @@ export function mountInventory(el) {
   renderHero();
   renderKpis();
   renderTable();
+  void loadFba();
+}
+
+// ─── Live FBA ────────────────────────────────────────────────────────
+
+async function loadFba() {
+  const [fba, runs] = await Promise.all([fetchFbaInventory(), fetchSyncStatus()]);
+  if (!panelEl) return;
+
+  const sync = syncStateFor(runs.rows, "fba");
+  panelEl.querySelector("#invBadge").innerHTML =
+    sync.state === "off" ? "" : syncBadge({ ...sync, label: sync.state === "live" ? "FBA live" : sync.label });
+  panelEl.querySelector("#invSync").innerHTML =
+    sync.state === "off"
+      ? `<div class="syncline">FBA stock isn't syncing yet — the Amazon column is manual. See <code>docs/SPAPI_SETUP.md</code>.</div>`
+      : syncLine(sync, "FBA sync");
+
+  if (fba.error) return;
+
+  const map = new Map();
+  for (const r of fba.rows) {
+    const key = r.sku || r.amazon_sku;
+    const slot = map.get(key) || { fulfillable: 0, inbound: 0, reserved: 0, unfulfillable: 0 };
+    slot.fulfillable += r.fulfillable || 0;
+    slot.inbound += (r.inbound_working || 0) + (r.inbound_shipped || 0) + (r.inbound_receiving || 0);
+    slot.reserved += r.reserved || 0;
+    slot.unfulfillable += r.unfulfillable || 0;
+    map.set(key, slot);
+  }
+  fbaBySku = map;
+
+  renderHero();
+  renderKpis();
+  renderTable();
 }
 
 // ─── Data shaping ────────────────────────────────────────────────────
@@ -118,13 +168,20 @@ function rowsWithState() {
   const { inventory } = getState();
   return seedInventory.map((row) => {
     const s = inventory[row.sku];
+    const fba = fbaBySku.get(row.sku) || null;
+    // Live FBA wins when we have it; otherwise fall back to the manual value.
+    const amazon = fba ? fba.fulfillable : s.amazon;
+    const inbound = fba ? fba.inbound : 0;
+    const total = amazon + s.warehouse;
     return {
       ...row,
-      amazon: s.amazon,
+      amazon,
+      inbound,
+      isLiveFba: Boolean(fba),
       warehouse: s.warehouse,
       reorderLevel: s.reorderLevel,
-      total: s.amazon + s.warehouse,
-      status: statusOf(s.amazon + s.warehouse, s.reorderLevel),
+      total,
+      status: statusOf(total, s.reorderLevel),
     };
   });
 }
@@ -135,12 +192,10 @@ function familyOf(sku) {
   if (sku.startsWith("CWD-")) return "Collagen Wound Dressing";
   if (sku.startsWith("SFD-")) return "Silicone Foam Dressing";
   if (sku.startsWith("CS-")) return "Compression Socks";
+  if (sku.startsWith("HC-ROLL")) return "Hydrocolloid Roll";
   return null;
 }
 
-// Group SKUs by family. SKUs with no family are added as their own
-// single-child group so the render path stays uniform; the renderer
-// shows them as plain rows.
 function buildGroups() {
   const all = rowsWithState();
   const map = new Map();
@@ -178,44 +233,36 @@ function applyFilter(row) {
   const matches =
     !q ||
     row.sku.toLowerCase().includes(q) ||
+    (row.asin || "").toLowerCase().includes(q) ||
     row.product.toLowerCase().includes(q) ||
     row.variant.toLowerCase().includes(q) ||
     row.category.toLowerCase().includes(q);
+
   let matchesCh = true;
   const a = row.amazon > 0, wh = row.warehouse > 0;
-  if (channel === "amazon") matchesCh = a;
+  if (channel === "listed") matchesCh = row.listed;
+  else if (channel === "unlisted") matchesCh = !row.listed;
+  else if (channel === "amazon") matchesCh = a;
   else if (channel === "warehouse") matchesCh = wh;
   else if (channel === "both") matchesCh = a && wh;
   return matches && matchesCh;
 }
 
-// Build per-variant breakdown subtitle for the parent row.
-// Compression Socks → group by version code (KHC/KHO/THC/THO).
-// Other multi-variant products → list each child by its size suffix.
+// Per-variant breakdown subtitle for the parent row.
 function breakdownText(group) {
-  if (group.product === "Compression Socks") {
-    const byVersion = new Map();
-    for (const c of group.children) {
-      const m = c.sku.match(/^CS-(\w+)-S/);
-      const code = m ? m[1] : "?";
-      byVersion.set(code, (byVersion.get(code) || 0) + c.total);
-    }
-    return [...byVersion.entries()]
-      .map(([code, qty]) => `${code} ${fmtNumber(qty)}`)
-      .join(" · ");
-  }
-  // Default: short variant label for each child SKU
   return group.children
     .map((c) => `${shortVariantLabel(c)} ${fmtNumber(c.total)}`)
     .join(" · ");
 }
 
 function shortVariantLabel(row) {
-  // Strip off the product family prefix from the SKU for a compact label.
-  // CWD-2X2 → "2x2"; SFD-4X4 → "4x4"; CWD-PWD → "Powder"; otherwise SKU.
   if (row.sku === "CWD-PWD") return "Powder";
-  const m = row.sku.match(/^(?:CWD|SFD)-(\d+X\d+)$/);
-  if (m) return m[1].toLowerCase().replace("x", "×");
+  const wound = row.sku.match(/^(?:CWD|SFD)-(\d+X\d+)$/);
+  if (wound) return wound[1].toLowerCase().replace("x", "×");
+  const sock = row.sku.match(/^CS-KHC-(S|M|L|XL)-BLK$/);
+  if (sock) return sock[1];
+  const roll = row.sku.match(/^HC-ROLL(\d+)FT$/);
+  if (roll) return `${roll[1]} ft`;
   return row.sku;
 }
 
@@ -227,6 +274,7 @@ function renderHero() {
   const lowCount = all.filter((r) => r.status === "Low").length;
   const watchCount = all.filter((r) => r.status === "Watch").length;
   const healthy = all.length - lowCount - watchCount;
+  const inbound = all.reduce((s, r) => s + r.inbound, 0);
 
   const status = lowCount > 0
     ? { tone: "down", text: `${lowCount} SKU${lowCount === 1 ? "" : "s"} below reorder` }
@@ -240,7 +288,7 @@ function renderHero() {
         <span class="arrow">${status.tone === "up" ? "✓" : "!"}</span> ${status.text}
       </span>
     </div>
-    <div class="sub">${all.length} SKUs tracked · ${healthy} healthy · ${watchCount} on watch · ${lowCount} low</div>
+    <div class="sub">${all.length} SKUs tracked · ${healthy} healthy · ${watchCount} on watch · ${lowCount} low${inbound > 0 ? ` · ${fmtNumber(inbound)} inbound to Amazon` : ""}</div>
   `;
 }
 
@@ -249,18 +297,19 @@ function renderKpis() {
   const totals = all.reduce(
     (acc, r) => {
       acc.amazon += r.amazon;
+      acc.inbound += r.inbound;
       acc.warehouse += r.warehouse;
       if (r.status === "Low") acc.low++;
       if (r.status === "Watch") acc.watch++;
       return acc;
     },
-    { amazon: 0, warehouse: 0, low: 0, watch: 0 },
+    { amazon: 0, inbound: 0, warehouse: 0, low: 0, watch: 0 },
   );
   const cards = [
-    { label: "Amazon Units", value: fmtNumber(totals.amazon) },
+    { label: "Amazon (FBA)", value: fmtNumber(totals.amazon) },
+    { label: "Inbound", value: fmtNumber(totals.inbound) },
     { label: "Warehouse Units", value: fmtNumber(totals.warehouse) },
     { label: "Low Stock", value: fmtNumber(totals.low) },
-    { label: "On Watch", value: fmtNumber(totals.watch) },
   ];
   panelEl.querySelector("#invKpis").innerHTML = cards
     .map(
@@ -280,7 +329,6 @@ function renderTable() {
   const all = groups.flatMap((g) => g.children);
   const body = panelEl.querySelector("#invBody");
 
-  // If the user is searching, auto-expand any group with matching children.
   if (filterState.q) {
     for (const g of groups) {
       if (g.children.some(applyFilter)) expanded.add(g.key);
@@ -296,20 +344,17 @@ function renderTable() {
     const isMulti = group.children.length > 1;
 
     if (!isMulti) {
-      // Plain SKU row — no group header.
-      const r = matchedChildren[0];
-      html += renderLeafRow(r);
+      html += renderLeafRow(matchedChildren[0]);
       visibleCount += 1;
       continue;
     }
 
     const isOpen = expanded.has(group.key);
     const aggAmazon = group.children.reduce((s, c) => s + c.amazon, 0);
+    const aggInbound = group.children.reduce((s, c) => s + c.inbound, 0);
     const aggWarehouse = group.children.reduce((s, c) => s + c.warehouse, 0);
     const aggTotal = aggAmazon + aggWarehouse;
     const status = worstStatus(group.children);
-    const breakdown = breakdownText(group);
-    const variantCount = group.children.length;
 
     html += `
       <tr class="group-row${isOpen ? " is-open" : ""}" data-group="${escapeAttr(group.key)}">
@@ -319,11 +364,12 @@ function renderTable() {
               <path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span class="group-name">${escapeHtml(group.product)}</span>
-            <span class="group-meta">${variantCount} variants</span>
+            <span class="group-meta">${group.children.length} variants</span>
           </button>
-          <div class="group-summary">${breakdown}</div>
+          <div class="group-summary">${breakdownText(group)}</div>
         </td>
         <td class="num ink"><strong>${fmtNumber(aggAmazon)}</strong></td>
+        <td class="num muted">${aggInbound > 0 ? fmtNumber(aggInbound) : "—"}</td>
         <td class="num ink"><strong>${fmtNumber(aggWarehouse)}</strong></td>
         <td class="num ink"><strong>${fmtNumber(aggTotal)}</strong></td>
         <td class="num muted">—</td>
@@ -333,23 +379,18 @@ function renderTable() {
     visibleCount += 1;
 
     if (isOpen) {
-      for (const r of matchedChildren) {
-        html += renderLeafRow(r, /* indented */ true);
-      }
+      for (const r of matchedChildren) html += renderLeafRow(r, true);
       visibleCount += matchedChildren.length;
     }
   }
 
-  if (!visibleCount) {
-    body.innerHTML = `<tr><td colspan="8"><div class="empty">No SKUs match your filters.</div></td></tr>`;
-  } else {
-    body.innerHTML = html;
-  }
+  body.innerHTML = visibleCount
+    ? html
+    : `<tr><td colspan="9"><div class="empty">No SKUs match your filters.</div></td></tr>`;
 
   panelEl.querySelector("#invCount").textContent =
     `${all.filter(applyFilter).length} of ${all.length} SKUs`;
 
-  // Wire row-level handlers (toggles + inputs).
   body.querySelectorAll(".group-row").forEach((tr) => {
     tr.querySelector(".group-toggle").addEventListener("click", () => {
       const key = tr.dataset.group;
@@ -368,12 +409,18 @@ function renderTable() {
 }
 
 function renderLeafRow(r, indented = false) {
+  // Live FBA is read-only — editing it would be a lie, Amazon owns the number.
+  const amazonCell = r.isLiveFba
+    ? `<td class="num ink" title="Live from Amazon SP-API"><strong>${fmtNumber(r.amazon)}</strong></td>`
+    : `<td class="num"><input type="number" min="0" data-field="amazon" value="${r.amazon}" /></td>`;
+
   return `
     <tr class="${r.status === "Low" ? "row-low" : ""}${indented ? " is-child" : ""}" data-sku="${r.sku}">
-      <td><span class="sku-cell">${r.sku}</span></td>
+      <td><span class="sku-cell">${r.sku}</span>${r.listed ? "" : ` <span class="chip">unlisted</span>`}</td>
       <td class="ink">${escapeHtml(r.product)}</td>
       <td class="muted">${escapeHtml(r.variant)}</td>
-      <td class="num"><input type="number" min="0" data-field="amazon" value="${r.amazon}" /></td>
+      ${amazonCell}
+      <td class="num muted">${r.inbound > 0 ? fmtNumber(r.inbound) : "—"}</td>
       <td class="num"><input type="number" min="0" data-field="warehouse" value="${r.warehouse}" /></td>
       <td class="num ink"><strong>${fmtNumber(r.total)}</strong></td>
       <td class="num"><input type="number" min="0" data-field="reorderLevel" value="${r.reorderLevel}" /></td>
@@ -384,11 +431,11 @@ function renderLeafRow(r, indented = false) {
 // ─── Export ─────────────────────────────────────────────────────────
 
 function exportCsv() {
-  const all = rowsWithState();
-  const rows = all.filter(applyFilter);
-  const header = ["SKU", "Product", "Category", "Variant", "Amazon", "Warehouse", "Total", "Reorder", "Status"];
+  const rows = rowsWithState().filter(applyFilter);
+  const header = ["SKU", "ASIN", "Product", "Category", "Variant", "Listed", "Amazon", "Amazon source", "Inbound", "Warehouse", "Total", "Reorder", "Status"];
   const lines = [header, ...rows.map((r) => [
-    r.sku, r.product, r.category, r.variant, r.amazon, r.warehouse, r.total, r.reorderLevel, r.status,
+    r.sku, r.asin || "", r.product, r.category, r.variant, r.listed ? "yes" : "no",
+    r.amazon, r.isLiveFba ? "FBA live" : "manual", r.inbound, r.warehouse, r.total, r.reorderLevel, r.status,
   ])];
   const csv = lines.map((l) => l.map(csvSafe).join(",")).join("\n");
   download(csv, `ovena_inventory_${new Date().toISOString().slice(0, 10)}.csv`);

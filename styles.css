@@ -1096,6 +1096,174 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   vertical-align: middle;
 }
 
+/* Live data badge — the counterpart to .mockbanner. Sits next to a tab
+   title once that tab is reading real synced data. */
+.livebadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 7px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.livebadge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.livebadge.stale {
+  background: rgba(180, 83, 9, 0.10);
+  color: var(--watch);
+}
+.livebadge.off {
+  background: var(--surface-tint);
+  color: var(--muted);
+}
+
+/* Freshness line under a tab header. */
+.syncline {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.syncline .warn { color: var(--watch); font-weight: 600; }
+
+/* Loading / error / empty panel states. */
+.statebox {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.statebox.error { color: var(--low); }
+.statebox .hint2 {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 48ch;
+  line-height: 1.5;
+}
+.statebox .spin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Ad platform chips. */
+.chip.amazon-ads { background: rgba(255, 153, 0, 0.10); color: #b45a00; }
+.chip.facebook-ads { background: rgba(24, 119, 242, 0.10); color: #1553a8; }
+.chip.google-ads { background: rgba(66, 133, 244, 0.10); color: #1a56c4; }
+
+/* Metric tone for values that are good high vs good low. */
+.val-good { color: var(--ok); font-weight: 600; }
+.val-warn { color: var(--watch); font-weight: 600; }
+.val-bad  { color: var(--low); font-weight: 600; }
+
+/* Platform section divider inside the Ads tab. */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 26px 0 12px;
+}
+.section-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.section-head .note { font-size: 11.5px; color: var(--muted); }
+
+/* Reporting-floor note under a tab title. */
+.floor-note {
+  display: inline-block;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Channel tiles on the Overview tab. */
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.channel-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.channel-card .ch-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.channel-card .ch-value {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.channel-card .ch-foot {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.channel-card.is-off { opacity: 0.62; }
+
+/* Merchant Center / policy alert banner. */
+.alertbox {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: rgba(185, 28, 28, 0.05);
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.alertbox .ico {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--low);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.alertbox .body { font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+.alertbox .body strong { color: var(--ink); }
+.alertbox a { color: var(--low); }
+
 /* Responsive */
 @media (max-width: 980px) {
   .app { grid-template-columns: 1fr; }

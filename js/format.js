@@ -48,7 +48,22 @@ export function fmtDate(input) {
   return dateFmt().format(toDate(input));
 }
 
+// Day keys ("2026-07-19") are calendar dates, not instants. Passing one to
+// `new Date()` yields UTC midnight, which any negative-offset timezone then
+// renders as the previous day — so a chart floored at Jul 19 would label its
+// first column "Jul 18". Format those as-is; only real timestamps get
+// converted into the viewer's timezone.
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+const dayKeyFmt = new Intl.DateTimeFormat(undefined, {
+  timeZone: "UTC",
+  month: "short",
+  day: "numeric",
+});
+
 export function fmtShortDate(input) {
+  if (typeof input === "string" && DAY_KEY.test(input)) {
+    return dayKeyFmt.format(new Date(`${input}T00:00:00Z`));
+  }
   return shortDateFmt().format(toDate(input));
 }
 

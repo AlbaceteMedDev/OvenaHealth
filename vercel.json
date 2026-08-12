@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/sync/catchr?days=28", "schedule": "0 */6 * * *" },
+    { "path": "/api/sync/shopify", "schedule": "15 */6 * * *" },
+    { "path": "/api/sync/fba", "schedule": "30 7 * * *" }
+  ],
+  "functions": {
+    "api/**/*.mjs": {
+      "maxDuration": 60
+    }
+  }
+}

@@ -3,22 +3,31 @@
 import { fmtTime, fmtDate, fmtTzAbbrev, getTimeZone } from "./format.js";
 import { subscribe, getState, loadInitial, onError, resetCache } from "./state.js";
 import * as auth from "./auth.js";
+import { mountOverview } from "./tabs/overview.js";
+import { mountAmazon } from "./tabs/amazon.js";
+import { mountShopify } from "./tabs/shopify.js";
+import { mountMeta } from "./tabs/meta.js";
+import { mountGoogle } from "./tabs/google.js";
 import { mountInventory } from "./tabs/inventory.js";
 import { mountScan } from "./tabs/scan.js";
-import { mountSales } from "./tabs/sales.js";
-import { mountProducts } from "./tabs/products.js";
-import { mountAds } from "./tabs/ads.js";
 import { mountMargins } from "./tabs/margins.js";
 
-const tabs = ["inventory", "scan", "sales", "products", "ads", "margins"];
+const tabs = ["overview", "amazon", "shopify", "meta", "google", "inventory", "scan", "margins"];
 const mounts = {
+  overview: mountOverview,
+  amazon: mountAmazon,
+  shopify: mountShopify,
+  meta: mountMeta,
+  google: mountGoogle,
   inventory: mountInventory,
   scan: mountScan,
-  sales: mountSales,
-  products: mountProducts,
-  ads: mountAds,
   margins: mountMargins,
 };
+
+// Old hash links (#sales, #products, #ads) still exist in bookmarks and in
+// the team guide, so map them onto their replacements instead of silently
+// dropping the user on Overview.
+const legacyTabs = { sales: "amazon", products: "amazon", ads: "amazon" };
 const mounted = new Set();
 
 // ─── Boot ────────────────────────────────────────────────────────────
@@ -77,7 +86,7 @@ async function showApp() {
   // Pull initial data; tabs read from cache so they render immediately
   // even if Supabase is slow.
   await loadInitial();
-  selectTab(location.hash.slice(1) || "inventory");
+  selectTab(location.hash.slice(1) || "overview");
 }
 
 // ─── Login form ──────────────────────────────────────────────────────
@@ -107,7 +116,8 @@ loginForm?.addEventListener("submit", async (e) => {
 
 // ─── Tab routing ────────────────────────────────────────────────────
 function selectTab(name) {
-  if (!tabs.includes(name)) name = "inventory";
+  if (legacyTabs[name]) name = legacyTabs[name];
+  if (!tabs.includes(name)) name = "overview";
   for (const t of tabs) {
     const btn = document.querySelector(`.nav-item[data-tab="${t}"]`);
     const panel = document.getElementById(`panel-${t}`);

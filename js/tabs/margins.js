@@ -1,7 +1,7 @@
 // Margins tab — manual COGS entry, per-SKU profit, blended margin.
 
 import { seedInventory } from "../data/inventory.js";
-import { mockOrders } from "../data/sales.js";
+import { fetchSales, salesBySku } from "../data/live.js";
 import { getState, updateRow, subscribe } from "../state.js";
 import { fmtCurrency, fmtNumber, fmtPercent } from "../format.js";
 
@@ -10,6 +10,23 @@ let period = 30;
 let q = "";
 let filter = "all";
 
+// Units and revenue per SKU for the active window, from the live Amazon
+// feed. Populated asynchronously; render paths treat "not loaded yet" the
+// same as "no sales", so the table draws immediately either way.
+let soldInWindow = new Map();
+
+async function loadSales() {
+  const { rows, error } = await fetchSales(period);
+  if (error) {
+    soldInWindow = new Map();
+  } else {
+    soldInWindow = new Map(
+      salesBySku(rows).map((s) => [s.sku, { units: s.units, revenue: s.revenue }]),
+    );
+  }
+  if (panelEl) render();
+}
+
 export function mountMargins(el) {
   panelEl = el;
   el.innerHTML = `
@@ -17,7 +34,7 @@ export function mountMargins(el) {
       <div class="titles">
         <h2>Margins</h2>
         <p>Enter cost-of-goods per SKU; profit per unit and gross margin update live.
-        <span class="muted-inline">Stored locally; will sync to your backend in Phase 2.</span></p>
+        <span class="muted-inline">Units sold come from Amazon. Amazon referral and FBA fees are not deducted — gross profit here is before Amazon's cut.</span></p>
       </div>
       <div class="segmented" role="group" aria-label="Period">
         ${[7, 30, 90].map((d) => `<button data-period="${d}" aria-pressed="${d === 30}">${d}d</button>`).join("")}
@@ -73,6 +90,7 @@ export function mountMargins(el) {
     period = Number(btn.dataset.period);
     el.querySelectorAll(".segmented button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.period === String(period) ? "true" : "false"));
     render();
+    void loadSales();
   });
 
   el.querySelector("#marSearch").addEventListener("input", (e) => {
@@ -93,6 +111,7 @@ export function mountMargins(el) {
   });
 
   render();
+  void loadSales();
 }
 
 function render() {
@@ -101,20 +120,8 @@ function render() {
   renderTable();
 }
 
-function periodSales() {
-  const cutoff = Date.now() - period * 86400000;
-  const map = new Map();
-  for (const o of mockOrders) {
-    if (Date.parse(o.ts) < cutoff) continue;
-    if (!map.has(o.sku)) map.set(o.sku, { units: 0, revenue: 0 });
-    const slot = map.get(o.sku);
-    slot.units += o.qty; slot.revenue += o.revenue;
-  }
-  return map;
-}
-
 function buildRows() {
-  const sales = periodSales();
+  const sales = soldInWindow;
   const { inventory } = getState();
   return seedInventory.map((row) => {
     const s = inventory[row.sku];

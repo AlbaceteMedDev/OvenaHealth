@@ -1,134 +1,248 @@
 # Ovena Health Commerce Portal
 
-A multi-tab e-commerce ops dashboard for Ovena Health: inventory, sales,
-product analytics, ad performance, and profit margins, all in one
-sidebar-driven interface with timezone-aware live data.
+An ops dashboard for the Ovena Health Amazon store: inventory, sales,
+product performance, ad spend and margins, in one sidebar-driven interface
+with timezone-aware live data.
 
 ## Tabs
 
-- **Inventory** — Amazon and Shopify stock with editable quantities, reorder
-  levels, low-stock detection, search/filter, and CSV export. **Live**
-  (Supabase-backed).
-- **Sales** — revenue trend, channel split (Amazon vs Shopify), AOV, and a
-  recent-orders feed. *Mock data; Phase 2b wires Shopify Admin API and
-  Phase 3 wires Amazon SP-API.*
-- **Products** — top sellers, category mix, and compression-sock variant
-  analysis (best version, size, color). *Mock data; goes live with Phase 2b.*
-- **Ads** — Meta Business performance: spend vs attributed revenue, blended
-  ROAS, audience and angle leaderboards, per-campaign metrics. *Mock data;
-  Phase 4 wires Meta Marketing API.*
-- **Margins** — manual COGS entry per SKU, live profit-per-unit, gross
-  margin %, and blended margin across the active period. **Live.**
+One tab per channel, plus an Overview that combines them.
 
-## Architecture
+- **Overview** — every channel together: total revenue, ad spend, TACOS, and
+  a daily channel breakdown. The only tab that adds Amazon and Shopify.
+- **Amazon** — ordered product sales, traffic, conversion, per-SKU
+  performance and Sponsored Ads campaigns. (Catchr → Amazon Seller + Ads.)
+- **Shopify** — storefront revenue **net of refunds**, per product, from the
+  Shopify Admin API.
+- **Meta** — Facebook/Instagram spend and campaigns. (Catchr.)
+- **Google** — Google Ads spend and campaigns, plus Merchant Center feed
+  health. (Catchr.)
+- **Inventory** — FBA stock from Amazon SP-API alongside warehouse counts
+  from barcode scans, with reorder levels, low-stock detection and CSV export.
+- **Scan** — warehouse barcode receive / pick / count, append-only audit log.
+- **Margins** — manual COGS entry per SKU, profit per unit, gross margin.
 
-- **Frontend:** vanilla JS ES modules, no build step. Hosted on Vercel
-  (`ovena-health.vercel.app`) and GitHub Pages
-  (`albacetemeddev.github.io/OvenaHealth/`).
-- **Backend:** Supabase (Postgres + Auth) for inventory & COGS persistence.
-- **Auth:** single shared password. All sign-ins use a hardcoded service
-  email + the team password.
+The old `#sales`, `#products` and `#ads` hashes redirect to `#amazon`.
+
+## Reporting rules
+
+Two filters apply to every tab, both defined once in
+[`js/config.js`](js/config.js):
+
+- **`DATA_START` = 2026-07-19.** Nothing before this date is reported.
+  `startDateFor()` clamps every query and `denseDays()` clamps every chart,
+  so a "14d" window and "All" can legitimately show the same number. Because
+  the eligible history is only a few weeks, the period selector is
+  7d / 14d / All rather than 7/30/90.
+- **`EXCLUDED_PRODUCT_PATTERNS` = `/juzo/i`.** The four Juzo listings were a
+  16-day trial (6 orders, $230, Jul 6–21) and were archived on 2026-08-12.
+  Their revenue is stripped from every channel. Matched on product title, so
+  a re-added Juzo SKU can't slip back in.
+
+Every tab states both rules under its title. Change them in `config.js` and
+the whole portal moves.
+
+### Gross vs net
+
+Amazon reports **ordered product sales** — before refunds, before referral
+and FBA fees. Shopify reports **net of refunds**. These are different
+measures and the Overview says so rather than implying one clean number.
+
+This matters more than it sounds. GA4 is connected and reports ecommerce
+revenue, but it fires `purchase` at checkout and never learns about refunds:
+on 2026-08-12 it put "Collagen Kit" at $823.91 against a Shopify gross of
+$441.95 and a **net of $0.00** — every order had been refunded within days.
+That's why storefront money comes from the Shopify Admin API and not GA4.
+
+## How the data gets in
+
+The browser never talks to Catchr or Amazon directly — both need secrets that
+can't ship to a client. Instead:
+
+```
+Catchr API ──┐
+             ├─→ Vercel cron functions (/api/sync/*) ─→ Supabase ─→ browser
+Amazon SP-API┘
+```
+
+Two consequences worth knowing:
+
+- **History is retained.** Catchr serves a rolling window; Supabase keeps
+  every day the sync has ever seen.
+- **GitHub Pages works too.** It can't run serverless functions, but it reads
+  the same Supabase tables, so both hosts show identical numbers. Only the
+  Vercel deployment actually runs the syncs.
+
+### Sync jobs
+
+| Route | Schedule | What it writes |
+|---|---|---|
+| `/api/sync/catchr` | every 6h | `amz_sales_daily`, `ads_daily`, `ads_sku_daily`, `gmc_*` |
+| `/api/sync/shopify` | every 6h | `shop_sales_daily`, `shop_totals_daily` |
+| `/api/sync/fba` | daily 07:30 | `fba_inventory` |
+| `/api/health` | on demand | diagnostics; `?probe=1` discovers the Catchr contract |
+
+The Shopify job always re-reads the whole window from `DATA_START` rather
+than just recent days: a refund issued today changes the net revenue of an
+order placed three weeks ago, and only a full re-read catches that.
+
+All three require `CRON_SECRET`, passed as `Authorization: Bearer …` (which
+is what Vercel Cron sends) or `?secret=…` by hand. Manual runs accept
+`?days=90` to backfill and `?dry=1` to fetch without writing.
+
+> On a Vercel **Hobby** plan, cron expressions are accepted but only fire
+> once per day. Upgrade to Pro for the 6-hourly schedule, or trigger
+> `/api/sync/catchr` manually when you need fresher numbers.
+
+## Environment variables
+
+Set in Vercel → Settings → Environment Variables. None of these belong in
+the repo.
+
+| Name | Required | Notes |
+|---|---|---|
+| `CRON_SECRET` | yes | guards every `/api` route; routes refuse to run if unset |
+| `CATCHR_API_KEY` | yes | Catchr API key |
+| `SUPABASE_URL` | yes | same project as `js/config.js` |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | **server only** — never in `js/` |
+| `CATCHR_QUERY_PATH` | no | default `/query/{platform}`; see below |
+| `CATCHR_AUTH_STYLE` | no | `bearer` (default) / `x-api-key` / `api-key` / `query` |
+| `CATCHR_GOOGLE_ADS_ACCOUNTS` | no | JSON array; defaults to the connected account |
+| `SHOPIFY_STORE_DOMAIN` | for Shopify | e.g. `c5s06e-3n.myshopify.com` |
+| `SHOPIFY_ADMIN_TOKEN` | for Shopify | Admin API token with `read_orders` |
+| `REPORT_TIMEZONE` | no | day-bucketing for Shopify orders, default `UTC` |
+| `SPAPI_CLIENT_ID` / `SPAPI_CLIENT_SECRET` / `SPAPI_REFRESH_TOKEN` | for FBA | see [docs/SPAPI_SETUP.md](docs/SPAPI_SETUP.md) |
+
+### One-time: pin the Catchr endpoint
+
+Catchr doesn't publish its REST contract. The request *body* the sync sends
+mirrors Catchr's own MCP server exactly, so it's known-good — but the
+endpoint path and auth header style are educated guesses with sensible
+defaults. Confirm them once:
+
+```
+GET /api/health?probe=1&secret=YOUR_CRON_SECRET
+```
+
+It tries each plausible combination and reports the one that works, along
+with a `pin` object. Copy those two values into Vercel env vars and the
+guessing stops. If every combination fails, ask Catchr support for the query
+endpoint and set `CATCHR_API_BASE` / `CATCHR_QUERY_PATH` accordingly.
 
 ## First-time setup
 
-These steps only need to happen once per Supabase project / Vercel deployment.
+### 1. Run the migrations
 
-### 1. Run the schema migration in Supabase
+Supabase → **SQL Editor** → paste and run each file in
+`supabase/migrations/` in order. They're idempotent.
 
-1. Open the Supabase project → **SQL Editor**.
-2. Paste the contents of [`supabase/migrations/0001_initial.sql`](supabase/migrations/0001_initial.sql) into a new query.
-3. Run. It creates the `inventory_state` table, RLS policies, and seeds all 49 SKU rows.
+`0004_amazon_store_and_marketing.sql` also reseeds the catalog against the
+live Amazon listings. Read the note at the top of that file before running
+it — the old speculative sock variants stop being displayed, and it tells you
+how to check for stranded quantities first.
 
-The migration is idempotent — re-running it won't blow away data.
+### 2. Disable email confirmation
 
-### 2. Disable email confirmation in Supabase Auth
+Supabase → **Authentication → Providers → Email** → turn **Confirm email**
+off. The portal creates the shared team account on first sign-in.
 
-The portal creates the team account on first sign-in. For that to work,
-Supabase must not require email confirmation.
+### 3. Sign in
 
-1. Supabase project → **Authentication → Providers → Email**.
-2. Toggle **"Confirm email"** OFF. Save.
+Visit the deployment, type the team password. First sign-in creates
+`team@ovenahealth.app` in Supabase Auth and persists the session locally.
 
-### 3. First sign-in
+### 4. Backfill
 
-1. Visit https://ovena-health.vercel.app
-2. Type the team password → **Sign in**. The first sign-in creates the
-   shared `team@ovenahealth.app` account in Supabase Auth, signs you in,
-   and persists the session locally.
-3. Subsequent visits skip the login screen until you hit **Sign out**.
-
-### 4. (Optional) Rotate the team password
-
-If the team password was ever shared in an unsafe place (chat, email),
-rotate it:
-
-1. Supabase project → **Authentication → Users** → click `team@ovenahealth.app` →
-   **Reset password** (or update via the dashboard).
-2. Tell the team the new password out-of-band.
+```
+/api/sync/catchr?days=90&secret=YOUR_CRON_SECRET
+/api/sync/fba?secret=YOUR_CRON_SECRET
+```
 
 ## Catalog
 
-- Collagen Wound Dressing — 2"x2", 4"x4", 7"x7"
-- Collagen Powder
-- Gauze Rolls
-- Silicone Foam Dressing — 4"x4", 6"x6", 8"x8"
-- Disposable Gloves
-- Wound Wash
-- Compression Socks (40 variants)
-  - Versions: KHC, KHO, THC, THO (knee/thigh high × closed/open toe)
-  - Sizes: 1–5
-  - Colors: Black (BLK), Beige (BGE)
+Live on Amazon.com — 7 SKUs:
 
-50 total SKUs.
+| SKU | ASIN | Product |
+|---|---|---|
+| `HC-ROLL5FT` | B0H8ZH3J9R | Hydrocolloid Roll 2" × 5 ft |
+| `HC-ROLL16FT` | B0H949P7JW | Hydrocolloid Roll 2" × 16 ft |
+| `CS-KHC-S-BLK` | B0H8ZT6Y7B | Compression Socks, knee high closed toe, black, S |
+| `CS-KHC-M-BLK` | B0H8ZVQPPB | …M |
+| `CS-KHC-L-BLK` | B0H8ZJPGL8 | …L |
+| `CS-KHC-XL-BLK` | B0H8ZQQB4F | …XL |
+| `SOCK-AID` | B0HC5X78B1 | Sock Aid Device, 9.5 in |
+
+`CS-KHC-L-BLK-FBA` is a second seller SKU on the L sock's ASIN; it's folded
+into `CS-KHC-L-BLK` via the `amazon_sku_map` table.
+
+Stocked but **not listed on Amazon** — the wound-care line (collagen
+dressings 2×2 / 4×4 / 7×7, collagen powder, gauze rolls, silicone foam
+dressings, gloves, wound wash). These keep inventory and COGS rows so
+warehouse counts and margin math work; they never appear in Amazon reporting.
+
+## Numbers the portal does *not* know
+
+Worth stating plainly, because it changes how you read the Margins tab:
+
+- **Amazon referral fees and FBA fulfilment fees are not deducted.** They're
+  not in any feed the portal reads. Gross profit and contribution are both
+  *before* Amazon's cut — treat them as ceilings.
+- **Meta and Google attributed revenue will read $0** against an Amazon
+  store. Their pixels can't see an Amazon purchase. See
+  [docs/CATCHR_GOOGLE_ADS.md](docs/CATCHR_GOOGLE_ADS.md).
+- **Only Amazon.com is synced.** CA / MX / BR are authorized in Catchr but
+  have no sales; enabling them needs currency conversion first.
 
 ## Run locally
 
-Static site, ES modules — needs to be served over HTTP, not opened from disk:
+Static site, ES modules — needs to be served over HTTP:
 
 ```sh
 python3 -m http.server 8000
-# then visit http://localhost:8000
 ```
 
-## Roadmap
-
-- **Phase 1** ✅ — multi-tab UI, timezone, COGS/margins, mock data for
-  sales/products/ads.
-- **Phase 1.5** ✅ — sidebar shell, hero metrics, design system overhaul.
-- **Phase 2a** ✅ *(this build)* — Vercel hosting, Supabase backend, shared
-  team password auth. Inventory and COGS now persist across devices.
-- **Phase 2b** — Shopify Admin API integration via Vercel Functions cron.
-  Sales tab and Inventory's Shopify column go live.
-- **Phase 3** — Amazon SP-API integration.
-- **Phase 4** — Meta Marketing API + UTM-based attribution.
+The `/api` routes need the Vercel CLI (`vercel dev`) and Node 20+.
 
 ## Project layout
 
 ```
 .
-├── index.html               # Page shell (boot splash, login, app)
-├── styles.css               # Design system + components
+├── index.html
+├── styles.css
+├── package.json             # type:module only — no deps, no build step
+├── vercel.json              # cron schedules + function config
+├── api/
+│   ├── health.mjs           # diagnostics + Catchr contract probe
+│   ├── _lib/
+│   │   ├── catchr.mjs       # Catchr client, field maps, probe
+│   │   ├── shopify.mjs      # Admin API orders → net-of-refund rows
+│   │   ├── spapi.mjs        # LWA auth + FBA Inventory
+│   │   ├── db.mjs           # Supabase writes over PostgREST
+│   │   └── accounts.mjs     # which Catchr sources to pull
+│   └── sync/
+│       ├── catchr.mjs       # Amazon sales + all ads + Merchant Center
+│       ├── shopify.mjs      # storefront sales → Supabase
+│       └── fba.mjs          # FBA stock → Supabase
 ├── js/
-│   ├── main.js              # Entry: auth gate + tab routing + clock
-│   ├── auth.js              # Sign-in / sign-out flow
-│   ├── supabase.js          # Supabase client singleton
-│   ├── config.js            # SUPABASE_URL, anon key, TEAM_EMAIL
-│   ├── state.js             # In-memory cache + Supabase upserts
-│   ├── format.js            # Timezone-aware formatters
-│   ├── charts.js            # SVG chart helpers
+│   ├── main.js  auth.js  supabase.js  state.js
+│   ├── config.js            # Supabase keys, DATA_START, excluded products
+│   ├── format.js  charts.js  ui.js  importer.js
 │   ├── data/
-│   │   ├── inventory.js     # SKU catalog seed
-│   │   ├── sales.js         # Mock orders (deterministic)
-│   │   └── ads.js           # Mock Meta campaigns (deterministic)
+│   │   ├── inventory.js     # catalog: SKUs, ASINs, aliases
+│   │   └── live.js          # Supabase read layer + shaping helpers
 │   └── tabs/
-│       ├── inventory.js
-│       ├── sales.js
-│       ├── products.js
-│       ├── ads.js
-│       └── margins.js
-├── supabase/
-│   └── migrations/
-│       └── 0001_initial.sql # Schema + RLS + seed
-└── .github/workflows/
-    └── pages.yml            # GitHub Pages auto-deploy
+│       ├── overview.js      # all channels combined
+│       ├── amazon.js  shopify.js
+│       ├── adchannel.js     # shared Meta/Google renderer
+│       ├── meta.js  google.js
+│       └── inventory.js  scan.js  margins.js
+├── docs/
+│   ├── CATCHR_GOOGLE_ADS.md
+│   └── SPAPI_SETUP.md
+└── supabase/migrations/
+    ├── 0001_initial.sql
+    ├── 0002_add_collagen_powder.sql
+    ├── 0003_warehouse_scanning.sql
+    ├── 0004_amazon_store_and_marketing.sql
+    └── 0005_shopify_and_merchant_center.sql
 ```
