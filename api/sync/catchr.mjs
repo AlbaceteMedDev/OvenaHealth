@@ -177,8 +177,9 @@ function normaliseAdRow(platform, r) {
       impressions: num(r.impressions),
       clicks: num(r.clicks),
       cost: num(r.spend),
-      attributed_sales: num(r.purchase_value),
-      attributed_orders: num(r.purchase),
+      // Keyed by the same raw action-type ids requested in FACEBOOK_ADS_FIELDS.
+      attributed_sales: num(r["action_value_offsite_conversion.fb_pixel_purchase"]),
+      attributed_orders: num(r["action_type_offsite_conversion.fb_pixel_purchase"]),
       attributed_units: 0,
     };
   }

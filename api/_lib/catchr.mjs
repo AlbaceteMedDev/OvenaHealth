@@ -156,11 +156,22 @@ export const AMAZON_ADS_FIELDS = {
   metrics: ["impressions", "clicks", "cost", "sales14d", "purchases14d"],
 };
 
+// Meta conversion metrics are addressed by their raw action-type keys, not
+// friendly names. "purchase" and "purchase_value" do NOT exist and the API
+// rejects the whole request with error 100 ("nonexisting summary field") —
+// so a single wrong id fails the sync rather than returning partial data.
+// Verified against the live connector 2026-08-12.
 export const FACEBOOK_ADS_FIELDS = {
   date: "_NORMALIZED_DATE_FIELD_YEAR_MONTH_DAY",
   campaignId: "campaign_id",
   campaignName: "campaign_name",
-  metrics: ["impressions", "clicks", "spend", "purchase_value", "purchase"],
+  metrics: [
+    "impressions",
+    "clicks",
+    "spend",
+    "action_value_offsite_conversion.fb_pixel_purchase",
+    "action_type_offsite_conversion.fb_pixel_purchase",
+  ],
 };
 
 // Google Ads field ids are PascalCase in Catchr, not the GAQL
