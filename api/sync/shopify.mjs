@@ -12,18 +12,11 @@
 import { fetchOrdersSince, shapeOrders, isConfigured } from "../_lib/shopify.mjs";
 import { upsert, startRun, finishRun } from "../_lib/db.mjs";
 import { DATA_START, isExcludedProduct } from "../../js/config.js";
-
-function authorized(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const header = req.headers?.authorization || "";
-  const url = new URL(req.url, "http://localhost");
-  return header === `Bearer ${secret}` || url.searchParams.get("secret") === secret;
-}
+import { authorized, UNAUTHORIZED } from "../_lib/auth.mjs";
 
 export default async function handler(req, res) {
   if (!authorized(req)) {
-    res.status(401).json({ error: "Unauthorized. Set CRON_SECRET and pass it as a bearer token or ?secret=." });
+    res.status(401).json({ error: UNAUTHORIZED });
     return;
   }
   if (!isConfigured()) {

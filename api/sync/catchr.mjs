@@ -21,6 +21,7 @@ import { upsert, startRun, finishRun, loadSkuAliases } from "../_lib/db.mjs";
 import { SELLER_ACCOUNTS, AD_PLATFORMS, MERCHANT_CENTER_ACCOUNTS } from "../_lib/accounts.mjs";
 import { skuAliases as staticAliases, skuMap, asinMap } from "../../js/data/inventory.js";
 import { DATA_START } from "../../js/config.js";
+import { authorized, UNAUTHORIZED } from "../_lib/auth.mjs";
 
 // Every pull is an explicit CUSTOM range clamped to DATA_START. Catchr's
 // relative ranges (LAST_28_DAYS and friends) would reach back past the
@@ -37,14 +38,6 @@ function rangeFor(days) {
     start_date: startIso < DATA_START ? DATA_START : startIso,
     end_date: end.toISOString().slice(0, 10),
   };
-}
-
-function authorized(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const header = req.headers?.authorization || "";
-  const url = new URL(req.url, "http://localhost");
-  return header === `Bearer ${secret}` || url.searchParams.get("secret") === secret;
 }
 
 // Resolve an Amazon seller SKU to a catalog SKU, preferring the live alias
@@ -348,7 +341,7 @@ async function syncMerchantCenter(range) {
 
 export default async function handler(req, res) {
   if (!authorized(req)) {
-    res.status(401).json({ error: "Unauthorized. Set CRON_SECRET and pass it as a bearer token or ?secret=." });
+    res.status(401).json({ error: UNAUTHORIZED });
     return;
   }
 

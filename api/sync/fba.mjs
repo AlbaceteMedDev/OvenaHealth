@@ -8,18 +8,11 @@
 import { fbaInventorySummaries, toInventoryRow, isConfigured, MARKETPLACE_ID } from "../_lib/spapi.mjs";
 import { replaceAll, startRun, finishRun, loadSkuAliases } from "../_lib/db.mjs";
 import { skuAliases as staticAliases, skuMap, asinMap } from "../../js/data/inventory.js";
-
-function authorized(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const header = req.headers?.authorization || "";
-  const url = new URL(req.url, "http://localhost");
-  return header === `Bearer ${secret}` || url.searchParams.get("secret") === secret;
-}
+import { authorized, UNAUTHORIZED } from "../_lib/auth.mjs";
 
 export default async function handler(req, res) {
   if (!authorized(req)) {
-    res.status(401).json({ error: "Unauthorized. Set CRON_SECRET and pass it as a bearer token or ?secret=." });
+    res.status(401).json({ error: UNAUTHORIZED });
     return;
   }
   if (!isConfigured()) {
