@@ -14,19 +14,23 @@
 
 import {
   fetchSales, fetchAds, fetchShopTotals, fetchSyncStatus,
-  salesTotals, adTotals, shopTotals, byDay, denseDays, daysAvailable,
+  salesTotals, adTotals, shopTotals, daysAvailable,
   PLATFORM_LABELS, DATA_START,
 } from "../data/live.js";
+import { bucketSeries, isPartialBucket } from "../series.js";
+import { exportButton, wireExport } from "../export.js";
 import { fmtCurrency, fmtNumber, fmtPercent, fmtShortDate } from "../format.js";
 import { renderDualLine, renderSpark } from "../charts.js";
 import {
   escapeHtml, debounce, kpi, periodButtons, wirePeriod, periodLabel, floorNote,
+  grainButtons, wireGrain,
   loadingBox, errorBox, emptyBox, NO_SYNC_HINT,
   syncStateFor, syncBadge, syncLine,
 } from "../ui.js";
 
 let panelEl = null;
 let period = "all";
+let grain = "day";
 let lastRender = null;
 
 export function mountOverview(el) {
@@ -39,12 +43,19 @@ export function mountOverview(el) {
         ${floorNote(DATA_START)}
         <div id="ovSync"></div>
       </div>
-      <div class="segmented" role="group" aria-label="Period">${periodButtons(period)}</div>
+      <div class="tab-tools">
+        <div class="segmented" role="group" aria-label="Period">${periodButtons(period)}</div>
+        <div id="ovGrain"></div>
+        ${exportButton("ovExport")}
+      </div>
     </div>
     <div id="ovBody">${loadingBox()}</div>
   `;
 
+  panelEl.querySelector("#ovGrain").innerHTML = grainButtons(grain, daysAvailable());
   wirePeriod(el, () => period, (v) => { period = v; }, render);
+  wireGrain(el, () => grain, (v) => { grain = v; }, render);
+  wireExport(el, "ovExport", () => lastRender?.exportData);
   render();
   window.addEventListener("resize", debounce(() => redraw(), 150));
 }
@@ -92,17 +103,26 @@ async function render() {
   const tacos = revenue > 0 ? totalSpend / revenue : null;
 
   // Daily blended revenue: Amazon ordered sales + Shopify net.
-  const amzDay = byDay(amz.rows, (r) => ({ amazon: Number(r.ordered_sales) || 0 }));
-  const shopDay = byDay(shop.rows, (r) => ({ shopify: Number(r.net_sales) || 0 }));
-  const adDay = byDay(ads.rows, (r) => ({ spend: Number(r.cost) || 0 }));
+  const todayIso = new Date().toISOString().slice(0, 10);
   const merged = new Map();
-  for (const [d, v] of amzDay) merged.set(d, { ...(merged.get(d) || {}), ...v });
-  for (const [d, v] of shopDay) merged.set(d, { ...(merged.get(d) || {}), ...v });
-  for (const [d, v] of adDay) merged.set(d, { ...(merged.get(d) || {}), ...v });
-  const daily = denseDays(period, merged, ["amazon", "shopify", "spend"]).map((d) => ({
-    ...d,
-    revenue: d.amazon + d.shopify,
-  }));
+  const fold = (rows, pick, keys) => {
+    for (const b of bucketSeries(rows, grain, pick)) {
+      const slot = merged.get(b.key) || { key: b.key, label: b.label };
+      for (const k of keys) slot[k] = (slot[k] || 0) + (b[k] || 0);
+      merged.set(b.key, slot);
+    }
+  };
+  fold(amz.rows, (r) => ({ amazon: Number(r.ordered_sales) || 0 }), ["amazon"]);
+  fold(shop.rows, (r) => ({ shopify: Number(r.net_sales) || 0 }), ["shopify"]);
+  fold(ads.rows, (r) => ({ spend: Number(r.cost) || 0 }), ["spend"]);
+  const daily = [...merged.values()]
+    .sort((a, b) => (a.key < b.key ? -1 : 1))
+    .map((d) => {
+      const partial = isPartialBucket(d.key, grain, DATA_START, todayIso);
+      const revenue = (d.amazon || 0) + (d.shopify || 0);
+      return { ...d, amazon: d.amazon || 0, shopify: d.shopify || 0, spend: d.spend || 0,
+               revenue, partial, tipLabel: partial ? `${d.label} (partial)` : d.label };
+    });
 
   const amzShare = revenue > 0 ? amzT.revenue / revenue : 0;
 
@@ -135,7 +155,7 @@ async function render() {
     <div class="card">
       <div class="card-head">
         <h3>Revenue vs ad spend</h3>
-        <span class="hint">${daily.length ? `${fmtShortDate(daily[0].label)} – ${fmtShortDate(daily[daily.length - 1].label)}` : "—"}</span>
+        <span class="hint">${daily.length ? `${daily[0].label} – ${daily[daily.length - 1].label}` : "—"} · hover to inspect</span>
       </div>
       <div class="card-body">
         <svg class="chart" id="ovChart"></svg>
@@ -164,7 +184,7 @@ async function render() {
             <tbody>
               ${[...daily].reverse().map((d) => `
                 <tr>
-                  <td class="muted">${fmtShortDate(d.label)}</td>
+                  <td class="muted">${escapeHtml(d.label)}${d.partial ? ' <span class="chip">partial</span>' : ""}</td>
                   <td class="num">${fmtCurrency(d.amazon)}</td>
                   <td class="num">${fmtCurrency(d.shopify)}</td>
                   <td class="num"><strong>${fmtCurrency(d.revenue)}</strong></td>
@@ -195,7 +215,23 @@ async function render() {
     kpi("Revenue / day", fmtCurrency(daily.length ? revenue / daily.length : 0), `over ${daily.length} days`),
   ].join("");
 
-  lastRender = { daily };
+  lastRender = {
+    daily,
+    exportData: {
+      name: "overview", grain,
+      rows: daily.map((d) => ({
+        bucket: d.label, key: d.key, partial: d.partial ? "yes" : "",
+        amazon: d.amazon.toFixed(2), shopify_net: d.shopify.toFixed(2),
+        total_revenue: d.revenue.toFixed(2), ad_spend: d.spend.toFixed(2),
+        tacos: d.revenue > 0 ? ((d.spend / d.revenue) * 100).toFixed(1) + "%" : "",
+      })),
+      columns: [
+        { key: "bucket", label: grain }, { key: "key", label: "key" }, { key: "partial", label: "partial_bucket" },
+        { key: "amazon", label: "amazon_ordered_sales" }, { key: "shopify_net", label: "shopify_net_sales" },
+        { key: "total_revenue", label: "total_revenue" }, { key: "ad_spend", label: "ad_spend" }, { key: "tacos", label: "tacos" },
+      ],
+    },
+  };
   redraw();
 }
 
@@ -218,10 +254,13 @@ function redraw() {
     height: 240,
     primaryKey: "spend",
     secondaryKey: "revenue",
-    axisLabels: [
-      fmtShortDate(daily[0].label),
-      fmtShortDate(daily[Math.floor(daily.length / 2)].label),
-      fmtShortDate(daily[daily.length - 1].label),
-    ],
+    axisLabels: [daily[0].label, daily[Math.floor(daily.length / 2)].label, daily[daily.length - 1].label],
+    scrub: {
+      primaryName: "Ad spend", secondaryName: "Revenue", fmt: (v) => fmtCurrency(v),
+      extra: (d) => [
+        { name: "Amazon", value: fmtCurrency(d.amazon) },
+        { name: "Shopify", value: fmtCurrency(d.shopify) },
+      ],
+    },
   });
 }

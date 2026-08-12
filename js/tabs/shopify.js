@@ -11,18 +11,22 @@
 
 import {
   fetchShopTotals, fetchShopSales, fetchAds, fetchSyncStatus,
-  shopTotals, shopByProduct, adTotals, byDay, denseDays, daysAvailable, DATA_START,
+  shopTotals, shopByProduct, adTotals, daysAvailable, DATA_START,
 } from "../data/live.js";
+import { bucketSeries, isPartialBucket } from "../series.js";
+import { exportButton, wireExport } from "../export.js";
 import { fmtCurrency, fmtNumber, fmtPercent, fmtShortDate } from "../format.js";
 import { renderLine, renderSpark, renderBars } from "../charts.js";
 import {
   escapeHtml, debounce, kpi, periodButtons, wirePeriod, periodLabel, floorNote,
+  grainButtons, wireGrain,
   loadingBox, errorBox, emptyBox,
   syncStateFor, syncBadge, syncLine,
 } from "../ui.js";
 
 let panelEl = null;
 let period = "all";
+let grain = "day";
 let lastRender = null;
 
 const NO_SHOPIFY_HINT =
@@ -38,12 +42,19 @@ export function mountShopify(el) {
         ${floorNote(DATA_START)}
         <div id="shopSync"></div>
       </div>
-      <div class="segmented" role="group" aria-label="Period">${periodButtons(period)}</div>
+      <div class="tab-tools">
+        <div class="segmented" role="group" aria-label="Period">${periodButtons(period)}</div>
+        <div id="shopGrain"></div>
+        ${exportButton("shopExport")}
+      </div>
     </div>
     <div id="shopBody">${loadingBox()}</div>
   `;
 
+  panelEl.querySelector("#shopGrain").innerHTML = grainButtons(grain, daysAvailable());
   wirePeriod(el, () => period, (v) => { period = v; }, render);
+  wireGrain(el, () => grain, (v) => { grain = v; }, render);
+  wireExport(el, "shopExport", () => lastRender?.exportData);
   render();
   window.addEventListener("resize", debounce(() => redraw(), 150));
 }
@@ -86,15 +97,17 @@ async function render() {
   const aov = t.orders > 0 ? t.net / t.orders : 0;
   const refundRate = t.gross > 0 ? t.refunds / t.gross : 0;
 
-  const daily = denseDays(
-    period,
-    byDay(totalsRes.rows, (r) => ({
-      net: Number(r.net_sales) || 0,
-      gross: Number(r.gross_sales) || 0,
-      orders: r.orders || 0,
-    })),
-    ["net", "gross", "orders"],
-  );
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const daily = bucketSeries(totalsRes.rows, grain, (r) => ({
+    net: Number(r.net_sales) || 0,
+    gross: Number(r.gross_sales) || 0,
+    refunds: Number(r.refunds) || 0,
+    orders: r.orders || 0,
+    units: r.units || 0,
+  })).map((b) => {
+    const partial = isPartialBucket(b.key, grain, DATA_START, todayIso);
+    return { ...b, partial, tipLabel: partial ? `${b.label} (partial)` : b.label };
+  });
 
   const reversed = products.filter((p) => p.fullyRefunded);
 
@@ -117,7 +130,7 @@ async function render() {
       <div class="card">
         <div class="card-head">
           <h3>Net revenue</h3>
-          <span class="hint">${daily.length ? `${fmtShortDate(daily[0].label)} – ${fmtShortDate(daily[daily.length - 1].label)}` : "—"}</span>
+          <span class="hint">${daily.length ? `${daily[0].label} – ${daily[daily.length - 1].label}` : "—"} · hover to inspect</span>
         </div>
         <div class="card-body">
           <svg class="chart" id="shopChart"></svg>
@@ -177,7 +190,7 @@ async function render() {
             <tbody>
               ${[...daily].reverse().map((d) => `
                 <tr>
-                  <td class="muted">${fmtShortDate(d.label)}</td>
+                  <td class="muted">${escapeHtml(d.label)}${d.partial ? ' <span class="chip">partial</span>' : ""}</td>
                   <td class="num"><strong>${fmtCurrency(d.net)}</strong></td>
                   <td class="num muted">${fmtCurrency(d.gross)}</td>
                   <td class="num">${fmtNumber(d.orders)}</td>
@@ -207,7 +220,22 @@ async function render() {
     kpi("Off-Amazon TACOS", tacos == null ? "—" : fmtPercent(tacos), `${fmtCurrency(offAmazonSpend)} Meta + Google spend`),
   ].join("");
 
-  lastRender = { daily, products };
+  lastRender = {
+    daily, products,
+    exportData: {
+      name: "shopify", grain,
+      rows: daily.map((b) => ({
+        bucket: b.label, key: b.key, partial: b.partial ? "yes" : "",
+        net_sales: (b.net || 0).toFixed(2), gross_sales: (b.gross || 0).toFixed(2),
+        refunds: (b.refunds || 0).toFixed(2), orders: b.orders || 0, units: b.units || 0,
+      })),
+      columns: [
+        { key: "bucket", label: grain }, { key: "key", label: "key" }, { key: "partial", label: "partial_bucket" },
+        { key: "net_sales", label: "net_sales" }, { key: "gross_sales", label: "gross_sales" },
+        { key: "refunds", label: "refunds" }, { key: "orders", label: "orders" }, { key: "units", label: "units" },
+      ],
+    },
+  };
   redraw();
 }
 
@@ -220,11 +248,8 @@ function redraw() {
   renderLine(panelEl.querySelector("#shopChart"), daily.map((d) => ({ label: d.label, value: d.net })), {
     height: 220,
     accent: true,
-    axisLabels: [
-      fmtShortDate(daily[0].label),
-      fmtShortDate(daily[Math.floor(daily.length / 2)].label),
-      fmtShortDate(daily[daily.length - 1].label),
-    ],
+    axisLabels: [daily[0].label, daily[Math.floor(daily.length / 2)].label, daily[daily.length - 1].label],
+    scrub: { name: "Net revenue", fmt: (v) => fmtCurrency(v) },
   });
   renderBars(
     panelEl.querySelector("#shopProdChart"),

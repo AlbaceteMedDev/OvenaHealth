@@ -8,12 +8,15 @@
 
 import {
   fetchAds, fetchShopTotals, fetchSyncStatus,
-  adTotals, adMetrics, shopTotals, byDay, denseDays, daysAvailable, DATA_START,
+  adTotals, adMetrics, shopTotals, daysAvailable, DATA_START,
 } from "../data/live.js";
+import { bucketSeries, isPartialBucket } from "../series.js";
+import { exportButton, wireExport } from "../export.js";
 import { fmtCurrency, fmtNumber, fmtPercent, fmtShortDate } from "../format.js";
 import { renderDualLine, renderSpark } from "../charts.js";
 import {
   escapeHtml, debounce, kpi, periodButtons, wirePeriod, periodLabel, floorNote,
+  grainButtons, wireGrain,
   loadingBox, errorBox, syncStateFor, syncBadge, syncLine, acosTone, roasTone, fmtRatio,
 } from "../ui.js";
 
@@ -21,6 +24,7 @@ import {
 export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBlocks = null }) {
   let panelEl = null;
   let period = "all";
+  let grain = "day";
   let lastRender = null;
 
   async function render() {
@@ -55,11 +59,16 @@ export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBl
     const storeNet = shopTotals(shop.rows).net;
     const m = adMetrics(t, storeNet);
 
-    const daily = denseDays(
-      period,
-      byDay(rows, (r) => ({ spend: Number(r.cost) || 0, attributed: Number(r.attributed_sales) || 0 })),
-      ["spend", "attributed"],
-    );
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const daily = bucketSeries(rows, grain, (r) => ({
+      spend: Number(r.cost) || 0,
+      attributed: Number(r.attributed_sales) || 0,
+      clicks: Number(r.clicks) || 0,
+      impressions: Number(r.impressions) || 0,
+    })).map((b) => {
+      const partial = isPartialBucket(b.key, grain, DATA_START, todayIso);
+      return { ...b, partial, tipLabel: partial ? `${b.label} (partial)` : b.label };
+    });
 
     const campaigns = collapse(rows);
 
@@ -71,7 +80,7 @@ export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBl
       <div class="card">
         <div class="card-head">
           <h3>Spend vs attributed revenue</h3>
-          <span class="hint">${daily.length ? `${fmtShortDate(daily[0].label)} – ${fmtShortDate(daily[daily.length - 1].label)}` : "—"}</span>
+          <span class="hint">${daily.length ? `${daily[0].label} – ${daily[daily.length - 1].label}` : "—"} · hover to inspect</span>
         </div>
         <div class="card-body">
           <svg class="chart chan-chart"></svg>
@@ -147,7 +156,22 @@ export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBl
       kpi("Share of storefront", m.tacos == null ? "—" : fmtPercent(m.tacos), `on ${fmtCurrency(storeNet)} Shopify net`),
     ].join("");
 
-    lastRender = { daily };
+    lastRender = {
+      daily,
+      exportData: {
+        name: platform, grain,
+        rows: daily.map((b) => ({
+          bucket: b.label, key: b.key, partial: b.partial ? "yes" : "",
+          spend: (b.spend || 0).toFixed(2), attributed_revenue: (b.attributed || 0).toFixed(2),
+          clicks: b.clicks || 0, impressions: b.impressions || 0,
+        })),
+        columns: [
+          { key: "bucket", label: grain }, { key: "key", label: "key" }, { key: "partial", label: "partial_bucket" },
+          { key: "spend", label: "spend" }, { key: "attributed_revenue", label: "attributed_revenue" },
+          { key: "clicks", label: "clicks" }, { key: "impressions", label: "impressions" },
+        ],
+      },
+    };
     redraw();
   }
 
@@ -160,10 +184,12 @@ export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBl
       height: 220,
       primaryKey: "spend",
       secondaryKey: "attributed",
+      scrub: { primaryName: "Spend", secondaryName: "Attributed", fmt: (v) => fmtCurrency(v),
+               extra: (b) => [{ name: "Clicks", value: fmtNumber(b.clicks || 0) }] },
       axisLabels: [
-        fmtShortDate(daily[0].label),
-        fmtShortDate(daily[Math.floor(daily.length / 2)].label),
-        fmtShortDate(daily[daily.length - 1].label),
+        daily[0].label,
+        daily[Math.floor(daily.length / 2)].label,
+        daily[daily.length - 1].label,
       ],
     });
   }
@@ -178,11 +204,18 @@ export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBl
           ${floorNote(DATA_START)}
           <div class="chan-sync"></div>
         </div>
-        <div class="segmented" role="group" aria-label="Period">${periodButtons(period)}</div>
+        <div class="tab-tools">
+          <div class="segmented" role="group" aria-label="Period">${periodButtons(period)}</div>
+          <div class="chan-grain"></div>
+          ${exportButton(`chanExport-${platform}`)}
+        </div>
       </div>
       <div class="chan-body">${loadingBox()}</div>
     `;
+    el.querySelector(".chan-grain").innerHTML = grainButtons(grain, daysAvailable());
     wirePeriod(el, () => period, (v) => { period = v; }, render);
+    wireGrain(el, () => grain, (v) => { grain = v; }, render);
+    wireExport(el, `chanExport-${platform}`, () => lastRender?.exportData);
     render();
     window.addEventListener("resize", debounce(() => redraw(), 150));
   };
