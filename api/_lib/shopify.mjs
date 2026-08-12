@@ -100,6 +100,7 @@ const ORDERS_QUERY = `
           createdAt
           cancelledAt
           currencyCode
+          sourceName
           lineItems(first: $linePage) {
             pageInfo { hasNextPage }
             edges {
@@ -125,8 +126,21 @@ function money(node) {
 }
 
 // Pull every order created on or after `sinceIso` (YYYY-MM-DD).
+// ─── Amazon orders must be excluded here ─────────────────────────────
+// The store has Shopify's Amazon sales channel installed, so every Amazon
+// order is ALSO imported into Shopify as an order with
+// sourceName "amazon" / channel "amazon-us". Counting those as storefront
+// revenue double-counts the entire Amazon business: measured 2026-08-12,
+// six separate days had Shopify and Amazon daily totals identical to the
+// cent, and only 6 of ~99 orders in the window were genuinely web orders.
+//
+// The filter belongs in the query string so the rows never arrive, and
+// shapeOrders() also re-checks sourceName as a backstop in case the search
+// syntax changes under us.
+export const NON_WEB_SOURCES = new Set(["amazon", "ebay", "walmart", "etsy"]);
+
 export async function fetchOrdersSince(sinceIso) {
-  const q = `created_at:>='${sinceIso}'`;
+  const q = `created_at:>='${sinceIso}' AND NOT source_name:amazon`;
   const orders = [];
   const truncated = [];
   let cursor = null;
@@ -185,8 +199,16 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
   const totals = new Map();
   let excludedLines = 0;
 
+  let marketplaceOrders = 0;
+
   for (const order of orders) {
     if (order.cancelledAt) continue;
+    // Backstop for the query-string filter: never let a marketplace order
+    // be counted as storefront revenue.
+    if (NON_WEB_SOURCES.has(String(order.sourceName || "").toLowerCase())) {
+      marketplaceOrders += 1;
+      continue;
+    }
 
     const date = dayFmt.format(new Date(order.createdAt));
     const currency = order.currencyCode || "USD";
@@ -258,6 +280,7 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
 
   return {
     excludedLines,
+    marketplaceOrders,
     productRows: [...products.values()].map((r) => ({
       ...r,
       gross_sales: round(r.gross_sales),

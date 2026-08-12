@@ -48,6 +48,32 @@ export function wirePeriod(el, get, set, onChange) {
   });
 }
 
+// ─── Granularity ─────────────────────────────────────────────────────
+// Day / Week / Month / Year. Options coarser than the available history
+// are disabled rather than hidden, so it's obvious why they're unavailable.
+export function grainButtons(active, availableDays) {
+  const minDays = { day: 0, week: 7, month: 28, year: 365 };
+  return `<div class="grain" role="group" aria-label="Granularity">${GRAIN_ORDER.map((g) => {
+    const enabled = availableDays >= minDays[g];
+    return `<button data-grain="${g}" aria-pressed="${g === active}"${enabled ? "" : " disabled title=\"Not enough history yet\""}>${GRAIN_TEXT[g]}</button>`;
+  }).join("")}</div>`;
+}
+
+const GRAIN_ORDER = ["day", "week", "month", "year"];
+const GRAIN_TEXT = { day: "Day", week: "Week", month: "Month", year: "Year" };
+
+export function wireGrain(el, get, set, onChange) {
+  el.querySelector(".grain")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-grain]");
+    if (!btn || btn.disabled) return;
+    set(btn.dataset.grain);
+    el.querySelectorAll(".grain button").forEach((b) =>
+      b.setAttribute("aria-pressed", b.dataset.grain === get() ? "true" : "false"),
+    );
+    onChange();
+  });
+}
+
 export function periodLabel(period, available) {
   if (period === "all") return `all ${available} days since relaunch`;
   return period >= available ? `all ${available} days since relaunch` : `last ${period} days`;

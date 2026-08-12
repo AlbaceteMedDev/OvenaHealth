@@ -13,7 +13,7 @@ import { openAmazonImport } from "../importer.js";
 import { syncStateFor, syncBadge, syncLine } from "../ui.js";
 
 let panelEl = null;
-let filterState = { q: "", channel: "all" };
+let filterState = { q: "", channel: "stocked" };
 const expanded = new Set(); // group keys currently expanded
 
 // SKU → { fulfillable, inbound, reserved, unfulfillable }. Empty until the
@@ -44,12 +44,12 @@ export function mountInventory(el) {
         <div class="controls" style="margin-bottom: 14px;">
           <input type="search" id="invSearch" placeholder="Search SKU, ASIN, product, variant, category…" />
           <select id="invChannel">
-            <option value="all">All SKUs</option>
+            <option value="stocked">Currently stocked</option>
+            <option value="all">All SKUs (incl. retired)</option>
             <option value="listed">Listed on Amazon</option>
-            <option value="unlisted">Not listed</option>
-            <option value="amazon">Amazon stock only</option>
-            <option value="warehouse">Warehouse only</option>
-            <option value="both">Stocked on both</option>
+            <option value="retired">Retired listings</option>
+            <option value="unlisted">Warehouse only (no ASIN)</option>
+            <option value="low">Low stock</option>
           </select>
           <span style="flex:1"></span>
           <button class="btn ghost" id="invExpandAll">Expand all</button>
@@ -79,11 +79,13 @@ export function mountInventory(el) {
     </div>
 
     <div class="sock-key">
-      <span class="sock-key-title">Amazon catalog</span>
-      <span class="sock-key-item"><b>HC-ROLL</b> Hydrocolloid Roll, 5 ft and 16 ft</span>
-      <span class="sock-key-item"><b>CS-KHC</b> Compression Socks, knee high closed toe, black, S–XL</span>
+      <span class="sock-key-title">Stocked on Amazon</span>
+      <span class="sock-key-item"><b>HC-ROLL</b> Hydrocolloid Roll — 5 ft, 16 ft</span>
+      <span class="sock-key-item"><b>CWD</b> Collagen Wound Dressing — 2×2, 4×4</span>
+      <span class="sock-key-item"><b>CWD-PWD</b> Collagen Wound Powder — 1 g</span>
+      <span class="sock-key-item"><b>CS-KHC</b> Compression Socks — M, L, XL</span>
       <span class="sock-key-item"><b>SOCK-AID</b> Sock Aid Device</span>
-      <span class="sock-key-foot">7 live SKUs on Amazon.com · wound-care line stocked but not listed</span>
+      <span class="sock-key-foot">9 stocked SKUs · sock S and dressing 7×7 retired (still listed, kept for history)</span>
     </div>
   `;
 
@@ -181,7 +183,8 @@ function rowsWithState() {
       warehouse: s.warehouse,
       reorderLevel: s.reorderLevel,
       total,
-      status: statusOf(total, s.reorderLevel),
+      stocked: row.stocked !== false,
+      status: row.stocked === false ? "Retired" : statusOf(total, s.reorderLevel),
     };
   });
 }
@@ -219,6 +222,7 @@ function statusOf(total, reorder) {
 }
 
 function statusClass(s) {
+  if (s === "Retired") return "";
   return s === "Low" ? "low" : s === "Watch" ? "watch" : "ok";
 }
 
@@ -239,18 +243,17 @@ function applyFilter(row) {
     row.category.toLowerCase().includes(q);
 
   let matchesCh = true;
-  const a = row.amazon > 0, wh = row.warehouse > 0;
-  if (channel === "listed") matchesCh = row.listed;
+  if (channel === "stocked") matchesCh = row.stocked !== false;
+  else if (channel === "listed") matchesCh = row.listed;
+  else if (channel === "retired") matchesCh = row.listed && row.stocked === false;
   else if (channel === "unlisted") matchesCh = !row.listed;
-  else if (channel === "amazon") matchesCh = a;
-  else if (channel === "warehouse") matchesCh = wh;
-  else if (channel === "both") matchesCh = a && wh;
+  else if (channel === "low") matchesCh = row.status === "Low";
   return matches && matchesCh;
 }
 
 // Per-variant breakdown subtitle for the parent row.
-function breakdownText(group) {
-  return group.children
+function breakdownText(children) {
+  return children
     .map((c) => `${shortVariantLabel(c)} ${fmtNumber(c.total)}`)
     .join(" · ");
 }
@@ -269,7 +272,7 @@ function shortVariantLabel(row) {
 // ─── Hero / KPIs ────────────────────────────────────────────────────
 
 function renderHero() {
-  const all = rowsWithState();
+  const all = rowsWithState().filter((r) => r.stocked);
   const totalUnits = all.reduce((s, r) => s + r.total, 0);
   const lowCount = all.filter((r) => r.status === "Low").length;
   const watchCount = all.filter((r) => r.status === "Watch").length;
@@ -293,7 +296,7 @@ function renderHero() {
 }
 
 function renderKpis() {
-  const all = rowsWithState();
+  const all = rowsWithState().filter((r) => r.stocked);
   const totals = all.reduce(
     (acc, r) => {
       acc.amazon += r.amazon;
@@ -341,7 +344,7 @@ function renderTable() {
   for (const group of groups) {
     const matchedChildren = group.children.filter(applyFilter);
     if (matchedChildren.length === 0) continue;
-    const isMulti = group.children.length > 1;
+    const isMulti = matchedChildren.length > 1;
 
     if (!isMulti) {
       html += renderLeafRow(matchedChildren[0]);
@@ -350,11 +353,11 @@ function renderTable() {
     }
 
     const isOpen = expanded.has(group.key);
-    const aggAmazon = group.children.reduce((s, c) => s + c.amazon, 0);
-    const aggInbound = group.children.reduce((s, c) => s + c.inbound, 0);
-    const aggWarehouse = group.children.reduce((s, c) => s + c.warehouse, 0);
+    const aggAmazon = matchedChildren.reduce((s, c) => s + c.amazon, 0);
+    const aggInbound = matchedChildren.reduce((s, c) => s + c.inbound, 0);
+    const aggWarehouse = matchedChildren.reduce((s, c) => s + c.warehouse, 0);
     const aggTotal = aggAmazon + aggWarehouse;
-    const status = worstStatus(group.children);
+    const status = worstStatus(matchedChildren);
 
     html += `
       <tr class="group-row${isOpen ? " is-open" : ""}" data-group="${escapeAttr(group.key)}">
@@ -364,9 +367,9 @@ function renderTable() {
               <path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span class="group-name">${escapeHtml(group.product)}</span>
-            <span class="group-meta">${group.children.length} variants</span>
+            <span class="group-meta">${matchedChildren.length} variants</span>
           </button>
-          <div class="group-summary">${breakdownText(group)}</div>
+          <div class="group-summary">${breakdownText(matchedChildren)}</div>
         </td>
         <td class="num ink"><strong>${fmtNumber(aggAmazon)}</strong></td>
         <td class="num muted">${aggInbound > 0 ? fmtNumber(aggInbound) : "—"}</td>

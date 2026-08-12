@@ -1,21 +1,21 @@
 // Catalog seed. Keep this in sync with the README catalog list.
 //
-// Two kinds of rows live here:
+// Three kinds of rows live here:
 //
-//   listed:   live on Amazon.com. `asin` is set, and these are the SKUs the
-//             Sales / Products / Ads tabs report on, because Amazon is the
-//             only channel with real order data flowing in.
-//   stocked:  products we hold or produce but that have no Amazon listing
-//             yet. They keep their inventory + COGS rows so warehouse counts
-//             and margin math still work, but they never appear in Amazon
-//             reporting.
+//   stocked:   live on Amazon.com AND currently carried. These are what the
+//              Inventory tab tracks and what reorder levels apply to.
+//   retired:   still has an Amazon listing and historical sales, but is no
+//              longer carried. Kept so past orders still resolve to a
+//              product instead of showing as an unknown SKU — excluded from
+//              inventory tracking and reorder alerts.
+//   warehouse: held or produced but never listed on Amazon.
 //
-// Seller SKUs that differ from the portal SKU (for example the separate FBA
-// listing "CS-KHC-L-BLK-FBA" on the same ASIN) are folded in through the
-// `amazon_sku_map` Supabase table, not here — see aliases below.
+// ASINs and prices below were read off the live listings on 2026-08-12.
+// The collagen line has listings with traffic but no sales yet, which is
+// why it never appeared in the Sales & Traffic report.
 
-// ─── Live on Amazon.com ──────────────────────────────────────────────
-const amazonListings = [
+// ─── Stocked and live on Amazon.com ──────────────────────────────────
+const stocked = [
   {
     sku: "HC-ROLL5FT",
     asin: "B0H8ZH3J9R",
@@ -35,13 +35,31 @@ const amazonListings = [
     suggestedPrice: 14.39,
   },
   {
-    sku: "CS-KHC-S-BLK",
-    asin: "B0H8ZT6Y7B",
-    product: "Compression Socks",
-    category: "Compression",
-    variant: "Knee High Closed Toe | S | Black",
-    reorderLevel: 30,
-    suggestedPrice: 22.49,
+    sku: "CWD-2X2",
+    asin: "B0HDCRM2WW",
+    product: "Collagen Wound Dressing",
+    category: "Wound Care",
+    variant: '2" x 2" · 5 count',
+    reorderLevel: 60,
+    suggestedPrice: 32.99,
+  },
+  {
+    sku: "CWD-4X4",
+    asin: "B0HDCGJSK6",
+    product: "Collagen Wound Dressing",
+    category: "Wound Care",
+    variant: '4" x 4" · 5 count',
+    reorderLevel: 50,
+    suggestedPrice: 55.0,
+  },
+  {
+    sku: "CWD-PWD",
+    asin: "B0H8N6Y5VW",
+    product: "Collagen Wound Powder",
+    category: "Wound Care",
+    variant: "1 gram · 5 count",
+    reorderLevel: 75,
+    suggestedPrice: 13.59,
   },
   {
     sku: "CS-KHC-M-BLK",
@@ -79,48 +97,72 @@ const amazonListings = [
     reorderLevel: 25,
     suggestedPrice: 14.99,
   },
-].map((row) => ({ ...row, listed: true, marketplace: "ATVPDKIKX0DER" }));
+].map((row) => ({ ...row, listed: true, stocked: true, marketplace: "ATVPDKIKX0DER" }));
 
-// ─── Stocked, not listed on Amazon ───────────────────────────────────
-// The wound-care line. Artwork and IFUs live in the repo root; these ship
-// through the warehouse today and have no ASIN yet.
-const stockedOnly = [
-  { sku: "CWD-2X2", product: "Collagen Wound Dressing", category: "Wound Care", variant: '2"x2"', reorderLevel: 80, suggestedPrice: 24.99 },
-  { sku: "CWD-4X4", product: "Collagen Wound Dressing", category: "Wound Care", variant: '4"x4"', reorderLevel: 70, suggestedPrice: 39.99 },
-  { sku: "CWD-7X7", product: "Collagen Wound Dressing", category: "Wound Care", variant: '7"x7"', reorderLevel: 60, suggestedPrice: 64.99 },
-  { sku: "CWD-PWD", product: "Collagen Powder", category: "Wound Care", variant: "1 Gram", reorderLevel: 75, suggestedPrice: 34.99 },
-  { sku: "GAUZE-ROLL", product: "Gauze Rolls", category: "Wound Care", variant: "Standard", reorderLevel: 100, suggestedPrice: 14.99 },
+// ─── Listed but no longer carried ────────────────────────────────────
+// Both still have live ASINs. The 7x7 dressing shows no buy-box price,
+// and the S sock is no longer stocked. They stay here purely so historical
+// orders resolve; they are hidden from Inventory by default.
+const retired = [
+  {
+    sku: "CS-KHC-S-BLK",
+    asin: "B0H8ZT6Y7B",
+    product: "Compression Socks",
+    category: "Compression",
+    variant: "Knee High Closed Toe | S | Black",
+    reorderLevel: 0,
+    suggestedPrice: 22.49,
+  },
+  {
+    sku: "CWD-7X7",
+    asin: "B0HDCQ2LJF",
+    product: "Collagen Wound Dressing",
+    category: "Wound Care",
+    variant: '7" x 7" · 5 count',
+    reorderLevel: 0,
+    suggestedPrice: 64.99,
+  },
+].map((row) => ({ ...row, listed: true, stocked: false, marketplace: "ATVPDKIKX0DER" }));
+
+// ─── Warehouse only, never listed on Amazon ──────────────────────────
+const warehouseOnly = [
+  { sku: "GAUZE-ROLL", product: "Gauze Rolls", category: "Supplies", variant: "Standard", reorderLevel: 100, suggestedPrice: 14.99 },
   { sku: "SFD-4X4", product: "Silicone Foam Dressing", category: "Wound Care", variant: '4"x4"', reorderLevel: 75, suggestedPrice: 34.99 },
   { sku: "SFD-6X6", product: "Silicone Foam Dressing", category: "Wound Care", variant: '6"x6"', reorderLevel: 70, suggestedPrice: 49.99 },
   { sku: "SFD-8X8", product: "Silicone Foam Dressing", category: "Wound Care", variant: '8"x8"', reorderLevel: 65, suggestedPrice: 69.99 },
   { sku: "GLOVE-DISP", product: "Disposable Gloves", category: "Supplies", variant: "Standard", reorderLevel: 200, suggestedPrice: 19.99 },
   { sku: "WOUND-WASH", product: "Wound Wash", category: "Supplies", variant: "Standard", reorderLevel: 90, suggestedPrice: 17.99 },
-].map((row) => ({ ...row, asin: null, listed: false, marketplace: null }));
+].map((row) => ({ ...row, asin: null, listed: false, stocked: true, marketplace: null }));
 
-export const seedInventory = [...amazonListings, ...stockedOnly];
+export const seedInventory = [...stocked, ...retired, ...warehouseOnly];
 
 // Amazon seller SKUs that point at a catalog SKU we already track. The sync
-// job also reads `amazon_sku_map` from Supabase; this covers the known cases
-// so a fresh install resolves them without a round trip.
-export const skuAliases = new Map([
-  ["CS-KHC-L-BLK-FBA", "CS-KHC-L-BLK"],
-]);
+// job also reads `amazon_sku_map` from Supabase; this covers the known case
+// so a fresh install resolves it without a round trip.
+export const skuAliases = new Map([["CS-KHC-L-BLK-FBA", "CS-KHC-L-BLK"]]);
 
 export const skuMap = new Map(seedInventory.map((row) => [row.sku, row]));
 
 export const asinMap = new Map(
-  amazonListings.map((row) => [row.asin, row]),
+  seedInventory.filter((r) => r.asin).map((row) => [row.asin, row]),
 );
 
-export const listedSkus = amazonListings.map((row) => row.sku);
+// Parent ASINs of variation families. Amazon reports sessions against these
+// but never sales, so they must not be mistaken for missing products.
+export const PARENT_ASINS = new Set(["B0H8M6CP76"]);
+
+export const listedSkus = [...stocked, ...retired].map((r) => r.sku);
+export const stockedSkus = stocked.map((r) => r.sku);
 
 // Resolve an Amazon seller SKU (or an alias) to a catalog row.
-export function resolveSku(amazonSku) {
-  if (!amazonSku) return null;
+export function resolveSku(amazonSku, asin) {
+  if (!amazonSku && !asin) return null;
   const direct = skuMap.get(amazonSku);
   if (direct) return direct;
   const aliased = skuAliases.get(amazonSku);
-  return aliased ? skuMap.get(aliased) || null : null;
+  if (aliased && skuMap.has(aliased)) return skuMap.get(aliased);
+  if (asin && asinMap.has(asin)) return asinMap.get(asin);
+  return null;
 }
 
 export const marketplaces = [

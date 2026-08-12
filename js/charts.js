@@ -3,6 +3,99 @@
 
 const NS = "http://www.w3.org/2000/svg";
 
+// ─── Scrubbing ───────────────────────────────────────────────────────
+// Attaches a crosshair + tooltip so any point on a chart can be inspected.
+// `points` is [{ x, label, rows: [{ name, value, cls }] }] in SVG user units,
+// and the chart's viewBox is assumed to span the full element width, so a
+// pointer position maps to a chart x by simple ratio.
+function attachScrub(svg, points, height, { pad } = { pad: { left: 0, right: 0 } }) {
+  if (!points.length) return;
+
+  const host = svg.parentElement;
+  if (!host) return;
+  if (getComputedStyle(host).position === "static") host.style.position = "relative";
+
+  let tip = host.querySelector(".chart-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.className = "chart-tip";
+    tip.hidden = true;
+    host.appendChild(tip);
+  }
+
+  const line = el("line", { class: "scrub-line", y1: 0, y2: height, x1: 0, x2: 0 });
+  line.style.display = "none";
+  svg.appendChild(line);
+
+  const dots = points.map(() => {
+    const c = el("circle", { r: 3.5, class: "scrub-dot" });
+    c.style.display = "none";
+    svg.appendChild(c);
+    return c;
+  });
+
+  const vb = svg.viewBox.baseVal;
+  const width = vb && vb.width ? vb.width : 1000;
+
+  function nearest(clientX) {
+    const r = svg.getBoundingClientRect();
+    const ux = ((clientX - r.left) / Math.max(1, r.width)) * width;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const d = Math.abs(points[i].x - ux);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  function show(e) {
+    const i = nearest(e.clientX);
+    const p = points[i];
+    line.setAttribute("x1", p.x);
+    line.setAttribute("x2", p.x);
+    line.style.display = "";
+    dots.forEach((d, j) => {
+      if (j !== i) { d.style.display = "none"; return; }
+      d.style.display = "";
+    });
+    // Position the active dots at this index across every series.
+    (p.dots || []).forEach((dy, k) => {
+      const d = dots[i];
+      if (k === 0 && d) { d.setAttribute("cx", p.x); d.setAttribute("cy", dy); }
+    });
+
+    tip.innerHTML =
+      `<div class="tip-label">${escape(p.label)}</div>` +
+      p.rows.map((r) => `<div class="tip-row"><span class="tip-name">${escape(r.name)}</span><span class="tip-val ${r.cls || ""}">${escape(r.value)}</span></div>`).join("");
+    tip.hidden = false;
+
+    const hostRect = host.getBoundingClientRect();
+    const svgRect = svg.getBoundingClientRect();
+    const px = (p.x / width) * svgRect.width + (svgRect.left - hostRect.left);
+    const tw = tip.offsetWidth || 140;
+    tip.style.left = `${Math.max(4, Math.min(hostRect.width - tw - 4, px - tw / 2))}px`;
+    tip.style.top = `${svgRect.top - hostRect.top + 4}px`;
+  }
+
+  function hide() {
+    line.style.display = "none";
+    dots.forEach((d) => { d.style.display = "none"; });
+    tip.hidden = true;
+  }
+
+  svg.style.touchAction = "none";
+  svg.addEventListener("pointermove", show);
+  svg.addEventListener("pointerdown", show);
+  svg.addEventListener("pointerleave", hide);
+}
+
+function escape(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
 export function renderLine(svg, series, opts = {}) {
   const {
     height = 200,
@@ -12,6 +105,7 @@ export function renderLine(svg, series, opts = {}) {
     pad = { top: 14, right: 12, bottom: 22, left: 12 },
     showAxisLabels = true,
     axisLabels = null, // optional [leftLabel, midLabel, rightLabel]
+    scrub = null,      // { name, fmt } enables the hover crosshair + tooltip
   } = opts;
 
   const width = svg.clientWidth || svg.parentElement?.clientWidth || 600;
@@ -59,6 +153,19 @@ export function renderLine(svg, series, opts = {}) {
       svg.appendChild(t);
     });
   }
+
+  if (scrub) {
+    attachScrub(
+      svg,
+      series.map((p, i) => ({
+        x: points[i][0],
+        label: p.tipLabel || p.label,
+        dots: [points[i][1]],
+        rows: [{ name: scrub.name || "Value", value: scrub.fmt ? scrub.fmt(p.value) : p.value }],
+      })),
+      height,
+    );
+  }
 }
 
 export function renderBars(svg, series, opts = {}) {
@@ -68,6 +175,7 @@ export function renderBars(svg, series, opts = {}) {
     pad = { top: 14, right: 8, bottom: 36, left: 8 },
     valueFmt = (v) => String(v),
     rotateLabels = false,
+    scrub = null, // { name, fmt } — hover readout per bar
   } = opts;
 
   const width = svg.clientWidth || svg.parentElement?.clientWidth || 600;
@@ -114,6 +222,20 @@ export function renderBars(svg, series, opts = {}) {
     });
     lbl.textContent = p.label;
     svg.appendChild(lbl);
+  }
+
+  if (scrub) {
+    const f = scrub.fmt || valueFmt;
+    attachScrub(
+      svg,
+      series.map((p, i) => ({
+        x: pad.left + slot * i + slot / 2,
+        label: p.tipLabel || p.label,
+        dots: [pad.top + innerH - innerH * (p.value / max)],
+        rows: [{ name: scrub.name || "Value", value: f(p.value) }],
+      })),
+      height,
+    );
   }
 }
 
@@ -189,6 +311,7 @@ export function renderDualLine(svg, series, opts = {}) {
     primaryKey,
     secondaryKey,
     axisLabels = null,
+    scrub = null, // { primaryName, secondaryName, fmt }
   } = opts;
   const width = svg.clientWidth || svg.parentElement?.clientWidth || 600;
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -231,6 +354,24 @@ export function renderDualLine(svg, series, opts = {}) {
       t.textContent = lbl;
       svg.appendChild(t);
     });
+  }
+
+  if (scrub) {
+    const f = scrub.fmt || ((v) => v);
+    attachScrub(
+      svg,
+      series.map((s, i) => ({
+        x: pad.left + i * stepX,
+        label: s.tipLabel || s.label,
+        dots: [yFor(s[secondaryKey] || 0)],
+        rows: [
+          { name: scrub.primaryName || primaryKey, value: f(s[primaryKey] || 0) },
+          { name: scrub.secondaryName || secondaryKey, value: f(s[secondaryKey] || 0) },
+          ...(scrub.extra ? scrub.extra(s) : []),
+        ],
+      })),
+      height,
+    );
   }
 }
 
