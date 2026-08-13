@@ -120,6 +120,15 @@ export const GLOSSARY = {
       "Revenue minus every cost that scales with a unit sold — COGS, shipping and Amazon's fees. " +
       "What each sale contributes toward fixed costs and advertising before either is paid.",
   },
+  "ORDER ITEMS": {
+    term: "Order items",
+    full: "Order items",
+    body:
+      "How many separate order lines included this product that day — the closest thing to a " +
+      "buyer count Amazon gives you. It is NOT unique customers: the Sales & Traffic report has no " +
+      "customer identifier, so one person ordering twice counts twice. Two units on one order is " +
+      "one order item; two units on two orders is two.",
+  },
   MER: {
     term: "MER",
     full: "Marketing Efficiency Ratio",

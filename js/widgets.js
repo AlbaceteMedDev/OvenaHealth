@@ -185,19 +185,28 @@ export const WIDGETS = [
         <td><span class="sku-cell">${escapeHtml(r.sku)}</span></td>
         <td>${escapeHtml(r.product)}<div class="muted">${escapeHtml(r.variant)}</div></td>
         <td class="num">${fmtNumber(r.units)}</td>
+        <td class="num">${fmtNumber(r.orderItems)}</td>
         <td class="num">${fmtCurrency(r.revenue)}</td>
         <td>${r.drivers.length
           ? r.drivers.map((d) => `<span class="chip">${escapeHtml(d.campaign)} · ${fmtCurrency(d.sales)}</span>`).join(" ")
-          : `<span class="muted">organic — no ad attribution that day</span>`}</td>
+          : `<span class="muted">no ${escapeHtml(String(r.category || "matching").toLowerCase())} campaign earned sales that day</span>`}</td>
       </tr>`);
       return card("What sold, and when", `
         ${table([{ label: "Date" }, { label: "SKU" }, { label: "Product" },
-                 { label: "Units", num: true }, { label: "Revenue", num: true }, { label: "What drove it" }],
+                 { label: "Units", num: true },
+                 { label: "Orders", num: true, hint: "ORDER ITEMS" },
+                 { label: "Revenue", num: true }, { label: "What drove it" }],
                 rows, { empty: "No sales in this window." })}
         <p class="muted" style="margin:12px;font-size:12px;">
-          Amazon's Sales &amp; Traffic report is <strong>daily</strong> — it carries no order timestamps,
-          so this is the finest time resolution available. "What drove it" matches campaigns that
-          Amazon credited with sales on the same day; it is same-day correlation, not a per-order source.
+          <strong>Orders</strong> is order lines, not unique customers — Amazon's Sales &amp; Traffic
+          report carries no customer identifier, so one person buying twice counts twice.
+          It is also <strong>daily</strong>, with no order timestamps, so a date is the finest time
+          resolution this data supports.<br>
+          <strong>What drove it</strong> only lists campaigns targeting <em>this product's own line</em>
+          that earned attributed sales that day — a hydrocolloid campaign can never appear against a
+          sock. Within a line it is still same-day correlation, not per-order attribution: Amazon
+          credits the campaign, and two sock campaigns running together can't be told apart here.
+          Per-SKU certainty needs <code>ads_sku_daily</code>, which has no rows yet.
         </p>`, { flush: true, foot: `${c.salesLog.length} SKU-days` });
     },
   },

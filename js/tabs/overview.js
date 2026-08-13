@@ -166,16 +166,36 @@ async function render() {
   }
   const campaigns = [...campMap.values()].sort((a, b) => b.cost - a.cost);
 
-  // Ad attribution keyed by day, for the sales log
-  const driversByDay = new Map();
+  // Ad attribution for the sales log, keyed by DAY AND PRODUCT CATEGORY.
+  //
+  // Keying on day alone was wrong: it put "Hydro Roll | Auto" next to a
+  // compression sock sale, implying a link that cannot exist. Every campaign
+  // names its product line, so the category it targets can be read off the
+  // name and matched to the SKU's own category.
+  //
+  // Order matters — "Sock Aid" must be tested before "sock", or the sock aid
+  // would swallow every compression sock campaign.
+  const campaignCategory = (name) => {
+    const n = String(name || "").toLowerCase();
+    if (/sock aid/.test(n)) return "Mobility";
+    if (/hydro/.test(n)) return "Hydrocolloid";
+    if (/compression|sock/.test(n)) return "Compression";
+    if (/wound care|collagen|dressing/.test(n)) return "Wound Care";
+    return null;
+  };
+
+  const driversByDayCat = new Map();
   for (const r of ads.rows) {
     const sales = Number(r.attributed_sales) || 0;
     if (sales <= 0) continue;
-    const list = driversByDay.get(r.date) || [];
+    const cat = campaignCategory(r.campaign_name);
+    if (!cat) continue;
+    const key = `${r.date}|${cat}`;
+    const list = driversByDayCat.get(key) || [];
     list.push({ campaign: r.campaign_name || "(unnamed)", sales, platform: r.platform });
-    driversByDay.set(r.date, list);
+    driversByDayCat.set(key, list);
   }
-  for (const list of driversByDay.values()) list.sort((a, b) => b.sales - a.sales);
+  for (const list of driversByDayCat.values()) list.sort((a, b) => b.sales - a.sales);
 
   // Per SKU-day sales log, newest first
   const salesLog = amz.rows
@@ -183,13 +203,18 @@ async function render() {
     .map((r) => {
       const sku = r.sku || r.amazon_sku;
       const meta = skuMap.get(sku);
+      const cat = meta?.category || null;
       return {
         date: r.date, sku,
         product: meta?.product || r.title || sku,
         variant: meta?.variant || "",
+        category: cat,
         units: r.units_ordered || 0,
+        // Amazon gives no customer identifier, so this is order lines, not
+        // unique buyers. Named accordingly everywhere it surfaces.
+        orderItems: r.order_items || 0,
         revenue: Number(r.ordered_sales) || 0,
-        drivers: (driversByDay.get(r.date) || []).slice(0, 3),
+        drivers: cat ? (driversByDayCat.get(`${r.date}|${cat}`) || []).slice(0, 3) : [],
       };
     })
     .sort((a, b) => (a.date === b.date ? b.revenue - a.revenue : a.date < b.date ? 1 : -1));
