@@ -128,22 +128,35 @@ const retired = [
   },
 ].map((row) => ({ ...row, listed: true, stocked: false, marketplace: "ATVPDKIKX0DER" }));
 
-// ─── Warehouse only, never listed on Amazon ──────────────────────────
-const warehouseOnly = [
-  { sku: "GAUZE-ROLL", product: "Gauze Rolls", category: "Supplies", variant: "Standard", reorderLevel: 100, suggestedPrice: 14.99 },
-  { sku: "SFD-4X4", product: "Silicone Foam Dressing", category: "Wound Care", variant: '4"x4"', reorderLevel: 75, suggestedPrice: 34.99 },
-  { sku: "SFD-6X6", product: "Silicone Foam Dressing", category: "Wound Care", variant: '6"x6"', reorderLevel: 70, suggestedPrice: 49.99 },
-  { sku: "SFD-8X8", product: "Silicone Foam Dressing", category: "Wound Care", variant: '8"x8"', reorderLevel: 65, suggestedPrice: 69.99 },
-  { sku: "GLOVE-DISP", product: "Disposable Gloves", category: "Supplies", variant: "Standard", reorderLevel: 200, suggestedPrice: 19.99 },
-  { sku: "WOUND-WASH", product: "Wound Wash", category: "Supplies", variant: "Standard", reorderLevel: 90, suggestedPrice: 17.99 },
-].map((row) => ({ ...row, asin: null, listed: false, stocked: true, marketplace: null }));
+// ─── Warehouse-only rows: removed 2026-08-13 ─────────────────────────
+// The catalog is deliberately scoped to five product lines — compression
+// socks, hydrocolloid rolls, sock aid, collagen powder, and the 2x2 / 4x4
+// collagen dressings. Nothing else belongs in it.
+//
+// Dropped with that scoping: GAUZE-ROLL, SFD-4X4, SFD-6X6, SFD-8X8
+// (silicone foam dressings — not the collagen 4x4), GLOVE-DISP and
+// WOUND-WASH. None were ever listed on Amazon and none had a cost in any
+// source document, so nothing measurable is lost. Migration 0008 removes
+// their inventory_state rows.
+//
+// Collagen care kits are intentionally absent — not carried yet. Do not add
+// a placeholder row for them; a SKU here with no stock and no cost drags
+// COGS coverage down and shows up as a phantom in reorder alerts.
 
-export const seedInventory = [...stocked, ...retired, ...warehouseOnly];
+export const seedInventory = [...stocked, ...retired];
 
 // Amazon seller SKUs that point at a catalog SKU we already track. The sync
 // job also reads `amazon_sku_map` from Supabase; this covers the known case
 // so a fresh install resolves it without a round trip.
-export const skuAliases = new Map([["CS-KHC-L-BLK-FBA", "CS-KHC-L-BLK"]]);
+// Confirmed against Seller Central on 2026-08-13: every seller SKU is the
+// catalog SKU with a "-FBA" suffix, not just the L sock. Only that one was
+// mapped before, so the other nine leaned entirely on the ASIN fallback in
+// resolveSku() — fine while every report carries an ASIN, silently wrong the
+// moment one doesn't. Derived rather than hand-listed so a new catalog row
+// can't be added without its alias.
+export const skuAliases = new Map(
+  [...stocked, ...retired].map((row) => [`${row.sku}-FBA`, row.sku]),
+);
 
 export const skuMap = new Map(seedInventory.map((row) => [row.sku, row]));
 

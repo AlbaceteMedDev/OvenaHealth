@@ -33,8 +33,8 @@ export function mountMargins(el) {
     <div class="tab-header">
       <div class="titles">
         <h2>Margins</h2>
-        <p>Enter cost-of-goods per SKU; profit per unit and gross margin update live.
-        <span class="muted-inline">Units sold come from Amazon. Amazon referral and FBA fees are not deducted — gross profit here is before Amazon's cut.</span></p>
+        <p>Enter cost-of-goods per SKU; profit per unit and net margin update live.
+        <span class="muted-inline">Units sold come from Amazon. Net is after both COGS and Amazon's fees per unit sold — a SKU showing no fee has none recorded, which is not the same as selling fee-free.</span></p>
       </div>
       <div class="segmented" role="group" aria-label="Period">
         ${[7, 30, 90].map((d) => `<button data-period="${d}" aria-pressed="${d === 30}">${d}d</button>`).join("")}
@@ -72,10 +72,11 @@ export function mountMargins(el) {
               <th>Variant</th>
               <th class="num">Retail</th>
               <th class="num">COGS</th>
-              <th class="num">Margin / unit</th>
-              <th class="num">Margin %</th>
+              <th class="num">Amazon fee</th>
+              <th class="num">Net / unit</th>
+              <th class="num">Net %</th>
               <th class="num">Units sold</th>
-              <th class="num">Gross profit</th>
+              <th class="num">Net profit</th>
             </tr>
           </thead>
           <tbody id="marBody"></tbody>
@@ -129,14 +130,20 @@ function buildRows() {
     const stockOnHand = s.amazon + s.warehouse;
     const retail = row.suggestedPrice;
     const cogs = s.cogs || 0;
+    const amazonFee = s.amazonFee || 0;
+    // Gross is kept alongside net so the Amazon fee's bite stays visible
+    // rather than being folded silently into one number.
     const marginPerUnit = retail - cogs;
     const marginPct = retail > 0 ? marginPerUnit / retail : 0;
+    const netPerUnit = retail - cogs - amazonFee;
+    const netPct = retail > 0 ? netPerUnit / retail : 0;
     const grossProfit = cogs > 0 ? sale.units * marginPerUnit : 0;
+    const netProfit = cogs > 0 ? sale.units * netPerUnit : 0;
     return {
-      ...row, stockOnHand, retail, cogs,
-      marginPerUnit, marginPct,
+      ...row, stockOnHand, retail, cogs, amazonFee,
+      marginPerUnit, marginPct, netPerUnit, netPct,
       unitsSold: sale.units, revenue: sale.revenue,
-      grossProfit, hasCogs: cogs > 0,
+      grossProfit, netProfit, hasCogs: cogs > 0,
     };
   });
 }
@@ -144,16 +151,16 @@ function buildRows() {
 function renderHero() {
   const rows = buildRows();
   const periodRevenue = rows.reduce((s, r) => s + r.revenue, 0);
-  const periodGrossProfit = rows.reduce((s, r) => s + r.grossProfit, 0);
-  const blendedMargin = periodRevenue > 0 ? periodGrossProfit / periodRevenue : 0;
+  const periodNetProfit = rows.reduce((s, r) => s + r.netProfit, 0);
+  const blendedMargin = periodRevenue > 0 ? periodNetProfit / periodRevenue : 0;
   const totalCogsCovered = rows.filter((r) => r.hasCogs).length;
   const coverage = rows.length > 0 ? totalCogsCovered / rows.length : 0;
 
   panelEl.querySelector("#marHero").innerHTML = `
-    <div class="eyebrow">Estimated gross profit · last ${period} days</div>
+    <div class="eyebrow">Estimated net profit after Amazon fees · last ${period} days</div>
     <div class="figure">
-      <div class="number">${fmtCurrency(periodGrossProfit)}</div>
-      <span class="delta">${fmtPercent(blendedMargin)} blended margin</span>
+      <div class="number">${fmtCurrency(periodNetProfit)}</div>
+      <span class="delta">${fmtPercent(blendedMargin)} blended net margin</span>
     </div>
     <div class="sub">${fmtCurrency(periodRevenue)} revenue · ${totalCogsCovered} of ${rows.length} SKUs have COGS entered (${fmtPercent(coverage)})</div>
   `;
@@ -209,7 +216,7 @@ function renderTable() {
 
   const body = panelEl.querySelector("#marBody");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="9"><div class="empty">No SKUs match.</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="10"><div class="empty">No SKUs match.</div></td></tr>`;
     return;
   }
 
@@ -225,14 +232,15 @@ function renderTable() {
           <input type="number" min="0" step="0.01" data-field="cogs"
                  value="${r.cogs ? r.cogs.toFixed(2) : ""}" placeholder="—" />
         </td>
-        <td class="num">${r.hasCogs ? fmtCurrency(r.marginPerUnit) : `<span class="muted">—</span>`}</td>
+        <td class="num">${r.amazonFee ? fmtCurrency(r.amazonFee) : `<span class="muted">—</span>`}</td>
+        <td class="num">${r.hasCogs ? fmtCurrency(r.netPerUnit) : `<span class="muted">—</span>`}</td>
         <td class="num">${
           r.hasCogs
-            ? `<span class="mpill ${r.marginPct >= 0.5 ? "ok" : r.marginPct >= 0.25 ? "watch" : "low"}">${fmtPercent(r.marginPct)}</span>`
+            ? `<span class="mpill ${r.netPct >= 0.5 ? "ok" : r.netPct >= 0.25 ? "watch" : "low"}">${fmtPercent(r.netPct)}</span>`
             : `<span class="muted">—</span>`
         }</td>
         <td class="num">${fmtNumber(r.unitsSold)}</td>
-        <td class="num">${r.hasCogs ? `<strong>${fmtCurrency(r.grossProfit)}</strong>` : `<span class="muted">—</span>`}</td>
+        <td class="num">${r.hasCogs ? `<strong>${fmtCurrency(r.netProfit)}</strong>` : `<span class="muted">—</span>`}</td>
       </tr>`,
     )
     .join("");

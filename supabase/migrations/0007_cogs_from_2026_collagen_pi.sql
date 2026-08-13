@@ -72,24 +72,17 @@ values
   ('SOCK-AID',      1.80)
 on conflict (sku) do update set cogs = excluded.cogs;
 
--- WOUND-WASH is a probable, not confirmed, match. The workbook line is
--- "Sterile Saline Wound Wash 0.9% (box of 20)" at $0.99 cost / $15.00
--- retail; the catalog carries WOUND-WASH at $17.99. Same product by name,
--- different retail. The cost is loaded because $0.99 per box of 20
--- reproduces the workbook's stated 93.4% margin exactly, but confirm the
--- retail before trusting gross profit on this row.
-insert into public.inventory_state (sku, cogs)
-values ('WOUND-WASH', 0.99)
-on conflict (sku) do update set cogs = excluded.cogs;
-
--- ─── Deliberately left at 0 ──────────────────────────────────────────
+-- ─── Nothing left uncosted ───────────────────────────────────────────
 --
--- GAUZE-ROLL, SFD-4X4, SFD-6X6, SFD-8X8, GLOVE-DISP have no cost in either
--- source document. They stay at 0 so the Margins tab keeps counting them as
--- missing rather than reporting a fabricated 100% margin.
+-- The catalog is scoped to five product lines, and every SKU in it is
+-- costed above. After this and 0008 run, COGS coverage goes from 0 of 17
+-- SKUs to 10 of 10.
 --
--- After this and 0008 run, COGS coverage goes from 0 of 17 SKUs to
--- 11 of 16.
+-- WOUND-WASH used to be costed here at $0.99 from the workbook's "Sterile
+-- Saline Wound Wash 0.9% (box of 20)" line. It is out of scope now and 0008
+-- deletes it, so the row is gone rather than orphaned. Worth knowing if it
+-- ever comes back: the workbook prices it at $15.00 retail while the
+-- catalog carried $17.99, so that match was never fully confirmed.
 
 -- ─── Open pricing question this migration cannot answer ──────────────
 --

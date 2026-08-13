@@ -85,7 +85,7 @@ export function mountInventory(el) {
       <span class="sock-key-item"><b>CWD-PWD</b> Collagen Wound Powder — 1 g</span>
       <span class="sock-key-item"><b>CS-KHC</b> Compression Socks — M, L, XL</span>
       <span class="sock-key-item"><b>SOCK-AID</b> Sock Aid Device</span>
-      <span class="sock-key-foot">9 stocked SKUs · sock S and dressing 7×7 retired (still listed, kept for history)</span>
+      <span class="sock-key-foot">9 stocked SKUs · sock S retired (still listed, kept for history)</span>
     </div>
   `;
 
