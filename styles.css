@@ -1632,3 +1632,169 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   border-radius: var(--radius-sm);
   background: var(--surface);
 }
+
+/* ─── Editable Overview: widget grid ─────────────────────────────── */
+
+.w-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.w { position: relative; min-width: 0; }
+.w-kpi  { grid-column: span 3; }
+.w-half { grid-column: span 6; }
+.w-full { grid-column: span 12; }
+@media (max-width: 1180px) {
+  .w-kpi  { grid-column: span 6; }
+  .w-half { grid-column: span 12; }
+}
+@media (max-width: 780px) { .w-kpi { grid-column: span 12; } }
+
+/* The grid supplies spacing, so cards inside must not add their own. */
+.w > .card, .w > .kpi { margin-bottom: 0; height: 100%; }
+
+.w.is-editing::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1px dashed var(--accent-line);
+  border-radius: var(--radius-lg);
+  pointer-events: none;
+}
+.w-tools {
+  position: absolute;
+  top: -10px;
+  right: 6px;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+}
+.w-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.w-btn:hover:not(:disabled) { background: var(--surface-tint); }
+.w-btn:disabled { opacity: 0.35; cursor: default; }
+.w-btn.danger:hover { border-color: var(--low); color: var(--low); }
+
+/* ─── Edit bar + widget picker ───────────────────────────────────── */
+
+.edit-bar {
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.edit-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.edit-row .spacer { flex: 1; }
+.hint.bad { color: var(--low); }
+
+.picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--accent-line);
+}
+.picker-group h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pick {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.pick:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pick.is-in, .pick:disabled { opacity: 0.4; cursor: default; }
+.pick-size {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* ─── Glossary "?" ───────────────────────────────────────────────── */
+
+.gloss {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 5px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-tint);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+.gloss:hover, .gloss:focus-visible { border-color: var(--accent); color: var(--accent); }
+
+.gloss-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 260px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+  z-index: 40;
+  pointer-events: none;
+}
+.gloss-pop strong { display: block; margin-bottom: 4px; color: var(--brand-cream); }
+.gloss:hover .gloss-pop, .gloss:focus-visible .gloss-pop { opacity: 1; visibility: visible; }
+
+/* Near the right edge the popover would overflow; nudge it inward. */
+.w-kpi:last-child .gloss-pop, .w .num .gloss-pop { left: auto; right: 0; transform: none; }
+
+/* ─── P&L breakdown table ────────────────────────────────────────── */
+
+.pl-table tr.pl-strong td { font-weight: 650; background: var(--surface-tint); }
+.pl-table tr.pl-cost td:nth-child(2) { color: var(--low); }
+.pl-table tr.pl-neg td { color: var(--low); font-weight: 650; background: rgba(185, 28, 28, 0.05); }
+.pl-table tr.pl-in td:nth-child(2) { color: var(--ok); }
+.pl-table td:first-child { white-space: nowrap; }

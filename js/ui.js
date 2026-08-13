@@ -14,9 +14,19 @@ export function debounce(fn, ms) {
 }
 
 export function kpi(label, value, foot, tone = "") {
+  return kpiHtml(escapeHtml(label), value, foot, tone);
+}
+
+// Same tile, but the label is inserted as-is. Needed because a label can
+// carry a glossary "?" button, and escaping that renders the markup as
+// visible text rather than a tooltip.
+//
+// The label is TRUSTED HTML. Only ever pass literals and glossary output —
+// never a product title, SKU, or anything else that came from the database.
+export function kpiHtml(labelHtml, value, foot, tone = "") {
   return `
     <div class="kpi">
-      <span class="label">${escapeHtml(label)}</span>
+      <span class="label">${labelHtml}</span>
       <span class="value">${value}</span>
       ${foot ? `<span class="foot ${tone}">${foot}</span>` : ""}
     </div>`;
