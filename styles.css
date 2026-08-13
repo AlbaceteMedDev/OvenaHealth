@@ -1982,3 +1982,38 @@ label.pick .chip { flex-shrink: 0; }
 }
 .w.drop-before::before { left: -9px; }
 .w.drop-after::before  { right: -9px; }
+
+/* ─── Widgets adapt to their own width, not the viewport's ────────────
+   A widget at ½ on a 2560px screen is wider than one at Full on a laptop,
+   so a viewport media query is the wrong instrument. Container queries let
+   each widget respond to the width it actually got. */
+
+.w { container-type: inline-size; container-name: widget; }
+
+/* Narrow: drop the columns marked optional, tighten everything up. */
+@container widget (max-width: 340px) {
+  .w-opt, td.w-opt { display: none; }
+  .card-head { padding: 12px 14px; }
+  .card-head h3 { font-size: 13px; }
+  .card-head .hint { display: none; }
+  .card-body { padding: 12px 14px; }
+  table { font-size: 12px; }
+  th, td { padding: 7px 8px; }
+  .kpi { padding: 13px 14px; }
+  .kpi .value { font-size: 22px; }
+  .kpi .foot { display: none; }
+}
+
+/* Roomy: let the number breathe rather than leaving a wall of whitespace. */
+@container widget (min-width: 560px) {
+  .kpi { padding: 20px 24px; }
+  .kpi .value { font-size: 34px; }
+}
+@container widget (min-width: 900px) {
+  .kpi .value { font-size: 42px; }
+  .kpi .label { font-size: 12px; letter-spacing: 0.1em; }
+}
+
+/* A table that outgrows its widget scrolls inside it — never pushes the
+   grid wider, which would break every other widget's width. */
+.w .table-wrap { max-width: 100%; overflow-x: auto; }

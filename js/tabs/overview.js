@@ -51,8 +51,17 @@ export const SPANS = [
   { w: 12, label: "Full" },
 ];
 
+// Widths a widget's content actually works at. A KPI tile stretched to full
+// width is a lot of whitespace around one number; a six-column table squeezed
+// into a quarter is a scrollbar. Widgets declare what suits them.
+const allowedSpans = (id) => WIDGET_MAP.get(id)?.spans ?? SPANS.map((s) => s.w);
+
 // A widget's natural width when it has never been resized.
-const defaultSpan = (id) => ({ kpi: 3, half: 6, full: 12 }[WIDGET_MAP.get(id)?.size] ?? 6);
+const defaultSpan = (id) => {
+  const natural = { kpi: 3, half: 6, full: 12 }[WIDGET_MAP.get(id)?.size] ?? 6;
+  const ok = allowedSpans(id);
+  return ok.includes(natural) ? natural : ok[ok.length - 1];
+};
 
 // ─── Layout persistence ──────────────────────────────────────────────
 //
@@ -67,7 +76,7 @@ function normalize(saved) {
     const id = typeof entry === "string" ? entry : entry?.id;
     if (!WIDGET_MAP.has(id)) continue;          // widget removed from the catalogue
     const raw = typeof entry === "object" ? Number(entry.w) : NaN;
-    const w = SPANS.some((s) => s.w === raw) ? raw : defaultSpan(id);
+    const w = allowedSpans(id).includes(raw) ? raw : defaultSpan(id);
     out.push({ id, w });
   }
   return out.length ? out : null;
@@ -344,7 +353,7 @@ function paint() {
     if (!w) return "";
     let inner;
     try {
-      inner = w.render(ctx);
+      inner = w.render(ctx, item.w);
     } catch (err) {
       inner = `<div class="card"><div class="card-body"><div class="empty">
         “${escapeHtml(w.title)}” failed to render: ${escapeHtml(err.message)}</div></div></div>`;
@@ -358,8 +367,8 @@ function paint() {
             <button type="button" class="w-btn w-grip" data-i="${i}"
                     aria-label="Drag ${escapeHtml(w.title)} to reorder" title="Drag to reorder">⠿</button>
             <span class="w-span" role="group" aria-label="Width">
-              ${SPANS.map((s) => `<button type="button" class="w-btn${s.w === item.w ? " is-on" : ""}"
-                data-span="${s.w}" data-i="${i}" aria-pressed="${s.w === item.w}"
+              ${SPANS.filter((s) => allowedSpans(item.id).includes(s.w)).map((s) => `<button type="button" class="w-btn${s.w === item.w ? " is-on" : ""}"
+                data-setspan="${s.w}" data-i="${i}" aria-pressed="${s.w === item.w}"
                 title="${s.w} of 12 columns">${s.label}</button>`).join("")}
             </span>
             <button type="button" class="w-btn" data-move="up" data-i="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
@@ -397,9 +406,9 @@ function paint() {
       [layout[i], layout[j]] = [layout[j], layout[i]];
       void saveLayout(); paint();
     }));
-  body.querySelectorAll("[data-span]").forEach((b) =>
+  body.querySelectorAll("[data-setspan]").forEach((b) =>
     b.addEventListener("click", () => {
-      layout[Number(b.dataset.i)].w = Number(b.dataset.span);
+      layout[Number(b.dataset.i)].w = Number(b.dataset.setspan);
       void saveLayout(); paint();
     }));
 
@@ -553,6 +562,6 @@ function drawAll() {
     const w = WIDGET_MAP.get(item.id);
     if (!w?.draw) return;
     const host = panelEl.querySelector(`.w[data-i="${i}"]`);
-    if (host) { try { w.draw(host, ctx); } catch { /* a chart failing must not blank the page */ } }
+    if (host) { try { w.draw(host, ctx, item.w); } catch { /* a chart failing must not blank the page */ } }
   });
 }
