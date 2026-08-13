@@ -76,7 +76,12 @@ on conflict (sku) do update set amazon_fee = excluded.amazon_fee;
 -- That same view shows nine of ten SKUs Out of Stock with large inbound
 -- quantities (500 + 500 hydro rolls, 250 per sock size, 650 sock aid, 200
 -- 4x4, 80 each 2x2 and powder; only the sock aid has sellable on-hand, at
--- 100). Those are inbound, not on-hand, and /api/sync/fba overwrites
--- fba_inventory wholesale on every run — hand-loading a snapshot here would
--- be erased the first time it runs. It belongs to the sync, not to a
--- migration.
+-- 100).
+--
+-- CORRECTION (0011): this section originally justified skipping stock
+-- quantities on the grounds that /api/sync/fba would overwrite them. That
+-- was wrong. api/sync/fba.mjs calls replaceAll("fba_inventory", ...) and
+-- never writes inventory_state, whose amazon_qty and shopify_qty are
+-- manual columns that nothing syncs. 0011 loads them.
+--
+-- What remains true: inbound is not on-hand, and there is no column for it.
