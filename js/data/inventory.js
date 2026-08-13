@@ -53,13 +53,20 @@ const stocked = [
     suggestedPrice: 55.0,
   },
   {
+    // $13.59 was here until 2026-08-13. It is not this product's price — it
+    // was picked up off a similar-items carousel tile (ASIN B08ZJ6BSCR) on
+    // the listing page. B0H8N6Y5VW itself carries no buy-box price at all,
+    // so there is no live number to read. $67.99 is the intended retail from
+    // the first-order pricing workbook; against $22.60 COGS that is a 66.8%
+    // margin, in line with the rest of the collagen line. Replace it with
+    // the real figure once the listing is priced.
     sku: "CWD-PWD",
     asin: "B0H8N6Y5VW",
     product: "Collagen Wound Powder",
     category: "Wound Care",
     variant: "1 gram · 5 count",
     reorderLevel: 75,
-    suggestedPrice: 13.59,
+    suggestedPrice: 67.99,
   },
   {
     sku: "CS-KHC-M-BLK",
@@ -100,9 +107,15 @@ const stocked = [
 ].map((row) => ({ ...row, listed: true, stocked: true, marketplace: "ATVPDKIKX0DER" }));
 
 // ─── Listed but no longer carried ────────────────────────────────────
-// Both still have live ASINs. The 7x7 dressing shows no buy-box price,
-// and the S sock is no longer stocked. They stay here purely so historical
-// orders resolve; they are hidden from Inventory by default.
+// Still has a live ASIN, but the S sock is no longer stocked. It stays here
+// purely so historical orders resolve; it is hidden from Inventory by
+// default.
+//
+// CWD-7X7 (7" x 7" collagen dressing, ASIN B0HDCQ2LJF) was dropped from the
+// catalog on 2026-08-13 — discontinued. It never sold a unit, so nothing
+// historical depends on it. Its ASIN is recorded here so the row can be
+// rebuilt if the size is ever brought back. Migration 0008 removes the
+// matching inventory_state row.
 const retired = [
   {
     sku: "CS-KHC-S-BLK",
@@ -112,15 +125,6 @@ const retired = [
     variant: "Knee High Closed Toe | S | Black",
     reorderLevel: 0,
     suggestedPrice: 22.49,
-  },
-  {
-    sku: "CWD-7X7",
-    asin: "B0HDCQ2LJF",
-    product: "Collagen Wound Dressing",
-    category: "Wound Care",
-    variant: '7" x 7" · 5 count',
-    reorderLevel: 0,
-    suggestedPrice: 64.99,
   },
 ].map((row) => ({ ...row, listed: true, stocked: false, marketplace: "ATVPDKIKX0DER" }));
 
