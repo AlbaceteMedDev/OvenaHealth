@@ -103,12 +103,26 @@ async function render() {
   }));
 
   // Merge into one row per bucket so the chart and the CSV agree exactly.
+  //
+  // Every slot is created with the FULL key set at zero, not just the keys
+  // of whichever series created it. A day with sales but no ad rows used to
+  // come out with spend/attributed/clicks undefined, because fillDays only
+  // zero-fills days that are missing entirely — a day that exists keeps its
+  // gaps. The CSV builder then hit `b.spend.toFixed(2)` and threw, after the
+  // DOM was already painted but before lastRender was assigned, so redraw()
+  // silently bailed on every later call and every chart on this tab stayed
+  // blank while the rest of the page looked fine.
+  const ALL_KEYS = ["revenue", "units", "refunds", "sessions", "pageViews", "spend", "attributed", "clicks"];
   const merged = new Map();
   const put = (arr, keys) => {
     for (const b of arr) {
-      const slot = merged.get(b.key) || { key: b.key, label: b.label };
+      let slot = merged.get(b.key);
+      if (!slot) {
+        slot = { key: b.key, label: b.label };
+        for (const k of ALL_KEYS) slot[k] = 0;
+        merged.set(b.key, slot);
+      }
       for (const k of keys) slot[k] = b[k] || 0;
-      merged.set(b.key, slot);
     }
   };
   put(salesSeries, ["revenue", "units", "refunds"]);
@@ -276,9 +290,15 @@ async function render() {
     kpi("Refund rate", fmtPercent(totals.units > 0 ? totals.refunds / totals.units : 0), `${fmtNumber(totals.refunds)} units`),
   ].join("");
 
-  lastRender = {
-    series, skus,
-    exportData: {
+  // Charts before CSV. The export builder is the more fragile of the two —
+  // it reaches into every field of every bucket — and a throw in it must not
+  // take the charts down with it, which is exactly what happened: redraw()
+  // was never reached and lastRender stayed null, so every later redraw
+  // silently returned and the tab rendered chartless with no error on screen.
+  lastRender = { series, skus, exportData: null };
+  redraw();
+
+  lastRender.exportData = {
       name: "amazon",
       grain,
       rows: series.map((b) => ({
@@ -298,9 +318,7 @@ async function render() {
         { key: "ad_spend", label: "ad_spend" }, { key: "attributed_sales", label: "attributed_sales" },
         { key: "ad_clicks", label: "ad_clicks" }, { key: "acos", label: "acos" }, { key: "tacos", label: "tacos" },
       ],
-    },
   };
-  redraw();
 }
 
 function collapseCampaigns(rows) {
