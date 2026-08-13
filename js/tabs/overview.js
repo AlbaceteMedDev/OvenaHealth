@@ -38,19 +38,48 @@ let layout = null;          // array of widget ids; null until loaded
 let editing = false;
 let ctx = null;
 let picking = false;
+const selected = new Set();   // widget ids ticked in the picker, pre-add
 
 const LAYOUT_ID = "overview";
 
+// Column spans offered in edit mode, out of a 12-column grid.
+export const SPANS = [
+  { w: 3, label: "¼" },
+  { w: 4, label: "⅓" },
+  { w: 6, label: "½" },
+  { w: 8, label: "⅔" },
+  { w: 12, label: "Full" },
+];
+
+// A widget's natural width when it has never been resized.
+const defaultSpan = (id) => ({ kpi: 3, half: 6, full: 12 }[WIDGET_MAP.get(id)?.size] ?? 6);
+
 // ─── Layout persistence ──────────────────────────────────────────────
+//
+// Stored as [{ id, w }]. Older layouts were a bare array of ids, so those
+// are upgraded on read rather than discarded — a saved dashboard should
+// survive the feature that added resizing.
+
+function normalize(saved) {
+  if (!Array.isArray(saved)) return null;
+  const out = [];
+  for (const entry of saved) {
+    const id = typeof entry === "string" ? entry : entry?.id;
+    if (!WIDGET_MAP.has(id)) continue;          // widget removed from the catalogue
+    const raw = typeof entry === "object" ? Number(entry.w) : NaN;
+    const w = SPANS.some((s) => s.w === raw) ? raw : defaultSpan(id);
+    out.push({ id, w });
+  }
+  return out.length ? out : null;
+}
+
+const defaultLayout = () => DEFAULT_LAYOUT.map((id) => ({ id, w: defaultSpan(id) }));
 
 async function loadLayout() {
   const { data, error } = await supabase
     .from("dashboard_layout").select("widgets").eq("id", LAYOUT_ID).maybeSingle();
-  if (error || !data) return [...DEFAULT_LAYOUT];
-  const saved = Array.isArray(data.widgets) ? data.widgets : [];
-  // Drop ids that no longer exist so a removed widget can't wedge the page.
-  const clean = saved.filter((id) => WIDGET_MAP.has(id));
-  return clean.length ? clean : [...DEFAULT_LAYOUT];
+  if (error || !data) return defaultLayout();
+  return normalize(data.widgets) || defaultLayout();
 }
 
 async function saveLayout() {
@@ -310,8 +339,8 @@ function paint() {
   paintEditBar();
   const body = panelEl.querySelector("#ovBody");
 
-  const cards = layout.map((id, i) => {
-    const w = WIDGET_MAP.get(id);
+  const cards = layout.map((item, i) => {
+    const w = WIDGET_MAP.get(item.id);
     if (!w) return "";
     let inner;
     try {
@@ -321,12 +350,18 @@ function paint() {
         “${escapeHtml(w.title)}” failed to render: ${escapeHtml(err.message)}</div></div></div>`;
     }
     return `
-      <div class="w w-${w.size}${editing ? " is-editing" : ""}" data-widget="${escapeHtml(id)}">
+      <div class="w${editing ? " is-editing" : ""}" style="--span:${item.w}"
+           data-span="${item.w}" data-widget="${escapeHtml(item.id)}" data-i="${i}">
         ${editing ? `
           <div class="w-tools">
+            <span class="w-span" role="group" aria-label="Width">
+              ${SPANS.map((s) => `<button type="button" class="w-btn${s.w === item.w ? " is-on" : ""}"
+                data-span="${s.w}" data-i="${i}" aria-pressed="${s.w === item.w}"
+                title="${s.w} of 12 columns">${s.label}</button>`).join("")}
+            </span>
             <button type="button" class="w-btn" data-move="up" data-i="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
             <button type="button" class="w-btn" data-move="down" data-i="${i}" ${i === layout.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
-            <button type="button" class="w-btn danger" data-remove="${escapeHtml(id)}" aria-label="Remove">×</button>
+            <button type="button" class="w-btn danger" data-remove="${i}" aria-label="Remove">×</button>
           </div>` : ""}
         ${inner}
       </div>`;
@@ -345,9 +380,10 @@ function paint() {
     <div class="w-grid">${cards || `<div class="empty">No widgets. Click <strong>Edit dashboard</strong> to add some.</div>`}</div>
   `;
 
+  // Remove by index, not by id — the same widget may appear more than once.
   body.querySelectorAll("[data-remove]").forEach((b) =>
     b.addEventListener("click", () => {
-      layout = layout.filter((x) => x !== b.dataset.remove);
+      layout.splice(Number(b.dataset.remove), 1);
       void saveLayout(); paint();
     }));
   body.querySelectorAll("[data-move]").forEach((b) =>
@@ -356,6 +392,11 @@ function paint() {
       const j = b.dataset.move === "up" ? i - 1 : i + 1;
       if (j < 0 || j >= layout.length) return;
       [layout[i], layout[j]] = [layout[j], layout[i]];
+      void saveLayout(); paint();
+    }));
+  body.querySelectorAll("[data-span]").forEach((b) =>
+    b.addEventListener("click", () => {
+      layout[Number(b.dataset.i)].w = Number(b.dataset.span);
       void saveLayout(); paint();
     }));
 
@@ -367,52 +408,76 @@ function paintEditBar() {
   panelEl.querySelector("#ovEdit").textContent = editing ? "Done editing" : "Edit dashboard";
   if (!editing) { bar.innerHTML = ""; return; }
 
-  const inUse = new Set(layout);
+  const counts = layout.reduce((m, it) => m.set(it.id, (m.get(it.id) || 0) + 1), new Map());
   bar.innerHTML = `
     <div class="edit-bar">
       <div class="edit-row">
         <strong>Editing</strong>
-        <span class="hint">${layout.length} of ${WIDGETS.length} widgets shown · reorder with ↑ ↓ · × removes</span>
+        <span class="hint">${layout.length} placed · ¼ ⅓ ½ ⅔ Full sets width · ↑ ↓ reorders · × removes</span>
         <span class="spacer"></span>
         <span class="hint" id="ovSaveNote"></span>
-        <button type="button" class="btn" id="ovAdd">${picking ? "Close" : "Add widget"}</button>
+        <button type="button" class="btn" id="ovAdd">${picking ? "Close picker" : "Add widgets"}</button>
         <button type="button" class="btn" id="ovReset">Reset to default</button>
       </div>
       ${picking ? `
+        <div class="picker-head">
+          <span class="hint">Tick as many as you like, then add them in one go.</span>
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="ovPickAll">Select all</button>
+          <button type="button" class="btn" id="ovPickNone">Clear</button>
+          <button type="button" class="btn primary" id="ovAddSel" ${selected.size ? "" : "disabled"}>
+            Add ${selected.size || ""} widget${selected.size === 1 ? "" : "s"}
+          </button>
+        </div>
         <div class="picker">
-          ${GROUPS.map((g) => {
-            const items = WIDGETS.filter((w) => w.group === g);
-            return `
-              <div class="picker-group">
-                <h4>${escapeHtml(g)}</h4>
-                ${items.map((w) => `
-                  <button type="button" class="pick${inUse.has(w.id) ? " is-in" : ""}"
-                          data-add="${escapeHtml(w.id)}" ${inUse.has(w.id) ? "disabled" : ""}>
-                    <span>${escapeHtml(w.title)}</span>
-                    <span class="pick-size">${w.size}</span>
-                  </button>`).join("")}
-              </div>`;
-          }).join("")}
+          ${GROUPS.map((g) => `
+            <div class="picker-group">
+              <h4>${escapeHtml(g)}</h4>
+              ${WIDGETS.filter((w) => w.group === g).map((w) => `
+                <label class="pick${selected.has(w.id) ? " is-sel" : ""}">
+                  <input type="checkbox" data-pick="${escapeHtml(w.id)}" ${selected.has(w.id) ? "checked" : ""} />
+                  <span class="pick-title">${escapeHtml(w.title)}</span>
+                  ${counts.get(w.id) ? `<span class="chip">on page${counts.get(w.id) > 1 ? ` ×${counts.get(w.id)}` : ""}</span>` : ""}
+                  <span class="pick-size">${w.size}</span>
+                </label>`).join("")}
+            </div>`).join("")}
         </div>` : ""}
     </div>`;
 
-  bar.querySelector("#ovAdd").addEventListener("click", () => { picking = !picking; paintEditBar(); });
-  bar.querySelector("#ovReset").addEventListener("click", () => {
-    layout = [...DEFAULT_LAYOUT]; void saveLayout(); paint();
+  bar.querySelector("#ovAdd").addEventListener("click", () => {
+    picking = !picking;
+    if (!picking) selected.clear();
+    paintEditBar();
   });
-  bar.querySelectorAll("[data-add]").forEach((b) =>
-    b.addEventListener("click", () => {
-      layout = [...layout, b.dataset.add];
-      void saveLayout(); picking = false; paint();
+  bar.querySelector("#ovReset").addEventListener("click", () => {
+    layout = defaultLayout(); selected.clear(); void saveLayout(); paint();
+  });
+
+  bar.querySelectorAll("[data-pick]").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      if (cb.checked) selected.add(cb.dataset.pick); else selected.delete(cb.dataset.pick);
+      paintEditBar();   // refresh the count on the Add button
     }));
+  bar.querySelector("#ovPickAll")?.addEventListener("click", () => {
+    WIDGETS.forEach((w) => selected.add(w.id)); paintEditBar();
+  });
+  bar.querySelector("#ovPickNone")?.addEventListener("click", () => { selected.clear(); paintEditBar(); });
+  bar.querySelector("#ovAddSel")?.addEventListener("click", () => {
+    // Catalogue order, not tick order, so a bulk add lands in a sane sequence.
+    for (const w of WIDGETS) if (selected.has(w.id)) layout.push({ id: w.id, w: defaultSpan(w.id) });
+    selected.clear(); picking = false;
+    void saveLayout(); paint();
+  });
 }
 
 function drawAll() {
   if (!ctx || !panelEl) return;
-  for (const id of layout) {
-    const w = WIDGET_MAP.get(id);
-    if (!w?.draw) continue;
-    const host = panelEl.querySelector(`[data-widget="${CSS.escape(id)}"]`);
+  // Keyed on position, not id — the same widget can appear more than once,
+  // and each copy needs its own chart drawn into its own node.
+  layout.forEach((item, i) => {
+    const w = WIDGET_MAP.get(item.id);
+    if (!w?.draw) return;
+    const host = panelEl.querySelector(`.w[data-i="${i}"]`);
     if (host) { try { w.draw(host, ctx); } catch { /* a chart failing must not blank the page */ } }
-  }
+  });
 }

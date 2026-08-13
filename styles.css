@@ -241,8 +241,10 @@ input[type="number"]::-webkit-inner-spin-button {
 /* Main */
 .main {
   padding: 36px 44px 64px;
-  max-width: 1320px;
+  /* No max-width: the dashboard is a 12-column grid and should use the whole
+     screen. Prose that shouldn't stretch caps itself (.titles p is 60ch). */
   width: 100%;
+  min-width: 0;
 }
 
 /* ──────────────────────────── Tab header ──────────────────────────── */
@@ -1641,15 +1643,19 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   gap: 14px;
   align-items: start;
 }
-.w { position: relative; min-width: 0; }
-.w-kpi  { grid-column: span 3; }
-.w-half { grid-column: span 6; }
-.w-full { grid-column: span 12; }
-@media (max-width: 1180px) {
-  .w-kpi  { grid-column: span 6; }
-  .w-half { grid-column: span 12; }
+.w {
+  position: relative;
+  min-width: 0;
+  grid-column: span var(--span, 6);
 }
-@media (max-width: 780px) { .w-kpi { grid-column: span 12; } }
+/* Below these widths a 12-column grid stops being readable, so spans
+   collapse regardless of what the saved layout asked for. Anything already
+   set to full width stays full. */
+@media (max-width: 1180px) {
+  .w { grid-column: span 6; }
+  .w[data-span="12"], .w[data-span="8"] { grid-column: span 12; }
+}
+@media (max-width: 780px) { .w { grid-column: span 12; } }
 
 /* The grid supplies spacing, so cards inside must not add their own. */
 .w > .card, .w > .kpi { margin-bottom: 0; height: 100%; }
@@ -1798,3 +1804,61 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
 .pl-table tr.pl-neg td { color: var(--low); font-weight: 650; background: rgba(185, 28, 28, 0.05); }
 .pl-table tr.pl-in td:nth-child(2) { color: var(--ok); }
 .pl-table td:first-child { white-space: nowrap; }
+
+/* ─── Width control on each widget ───────────────────────────────── */
+
+.w-span {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-sm);
+}
+.w-span .w-btn {
+  width: 26px;
+  height: 20px;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: 11px;
+}
+.w-span .w-btn.is-on {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ─── Multi-select picker ────────────────────────────────────────── */
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--accent-line);
+}
+.picker-head .spacer { flex: 1; }
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn.primary:hover:not(:disabled) { background: var(--accent-2); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+label.pick { cursor: pointer; }
+label.pick input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+label.pick .pick-title { flex: 1; }
+label.pick.is-sel {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+label.pick .chip { flex-shrink: 0; }
