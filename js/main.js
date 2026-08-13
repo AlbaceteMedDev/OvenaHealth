@@ -3,6 +3,7 @@
 import { fmtTime, fmtDate, fmtTzAbbrev, getTimeZone } from "./format.js";
 import { subscribe, getState, loadInitial, onError, resetCache } from "./state.js";
 import * as auth from "./auth.js";
+import { initTheme } from "./theme.js";
 import { mountOverview } from "./tabs/overview.js";
 import { mountAmazon } from "./tabs/amazon.js";
 import { mountShopify } from "./tabs/shopify.js";
@@ -33,6 +34,10 @@ const mounted = new Set();
 // ─── Boot ────────────────────────────────────────────────────────────
 // Boot must always complete: if Supabase or auth are slow, we fall through
 // to the login screen after a hard timeout so the UI is never stuck.
+// Before boot, so a dark-mode user never sees a white flash while auth
+// resolves. Reads only localStorage and a media query — nothing to await.
+initTheme();
+
 (async function boot() {
   console.info("[boot] start");
   let timedOut = false;

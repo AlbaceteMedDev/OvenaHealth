@@ -351,9 +351,12 @@ function paint() {
     }
     return `
       <div class="w${editing ? " is-editing" : ""}" style="--span:${item.w}"
+           ${editing ? 'draggable="true"' : ""}
            data-span="${item.w}" data-widget="${escapeHtml(item.id)}" data-i="${i}">
         ${editing ? `
           <div class="w-tools">
+            <button type="button" class="w-btn w-grip" data-i="${i}"
+                    aria-label="Drag ${escapeHtml(w.title)} to reorder" title="Drag to reorder">⠿</button>
             <span class="w-span" role="group" aria-label="Width">
               ${SPANS.map((s) => `<button type="button" class="w-btn${s.w === item.w ? " is-on" : ""}"
                 data-span="${s.w}" data-i="${i}" aria-pressed="${s.w === item.w}"
@@ -399,6 +402,8 @@ function paint() {
       layout[Number(b.dataset.i)].w = Number(b.dataset.span);
       void saveLayout(); paint();
     }));
+
+  if (editing) wireDragDrop(body);
 
   drawAll();
 }
@@ -467,6 +472,76 @@ function paintEditBar() {
     for (const w of WIDGETS) if (selected.has(w.id)) layout.push({ id: w.id, w: defaultSpan(w.id) });
     selected.clear(); picking = false;
     void saveLayout(); paint();
+  });
+}
+
+// ─── Drag to reorder ─────────────────────────────────────────────────
+//
+// Native HTML5 drag-and-drop, gated to a grip handle. Without the gate the
+// whole card is draggable, and pressing any button inside it (width, remove)
+// starts a drag instead of clicking. The ↑ ↓ buttons stay: drag alone is
+// unusable by keyboard, and this is the only way to reorder.
+
+let dragFrom = null;
+let dragAllowed = false;
+
+function clearDropMarks(root) {
+  root.querySelectorAll(".drop-before, .drop-after")
+    .forEach((n) => n.classList.remove("drop-before", "drop-after"));
+}
+
+function wireDragDrop(root) {
+  root.querySelectorAll(".w-grip").forEach((g) => {
+    const arm = () => { dragAllowed = true; };
+    g.addEventListener("mousedown", arm);
+    g.addEventListener("touchstart", arm, { passive: true });
+  });
+  // Disarm however the gesture ends, or the next click-drag anywhere would
+  // be treated as an authorised reorder.
+  window.addEventListener("mouseup", () => { dragAllowed = false; }, { once: true });
+
+  root.querySelectorAll(".w").forEach((el) => {
+    el.addEventListener("dragstart", (e) => {
+      if (!dragAllowed) { e.preventDefault(); return; }
+      dragFrom = Number(el.dataset.i);
+      el.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(dragFrom));   // Firefox needs a payload
+    });
+
+    el.addEventListener("dragend", () => {
+      dragFrom = null; dragAllowed = false;
+      el.classList.remove("is-dragging");
+      clearDropMarks(root);
+    });
+
+    el.addEventListener("dragover", (e) => {
+      if (dragFrom === null || Number(el.dataset.i) === dragFrom) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const r = el.getBoundingClientRect();
+      const after = e.clientX - r.left > r.width / 2;
+      clearDropMarks(root);
+      el.classList.add(after ? "drop-after" : "drop-before");
+    });
+
+    el.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (dragFrom === null) return;
+      const over = Number(el.dataset.i);
+      const r = el.getBoundingClientRect();
+      const after = e.clientX - r.left > r.width / 2;
+
+      let to = after ? over + 1 : over;
+      const [moved] = layout.splice(dragFrom, 1);
+      if (dragFrom < to) to -= 1;                 // removing shifts everything after it left
+      layout.splice(Math.max(0, Math.min(to, layout.length)), 0, moved);
+
+      dragFrom = null; dragAllowed = false;
+      clearDropMarks(root);
+      void saveLayout();
+      paint();
+    });
   });
 }
 

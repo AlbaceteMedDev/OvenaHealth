@@ -40,6 +40,12 @@
   --low: #b91c1c;
 
   /* Effects */
+  /* Text painted on an accent-coloured fill, and tooltip surfaces. Both
+     need to flip with the theme rather than being hardcoded white. */
+  --on-accent: #ffffff;
+  --tooltip-bg: #0a0e1a;
+  --tooltip-fg: #f7f5f0;
+
   --shadow-xs: 0 1px 1px rgba(15, 23, 42, 0.03);
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.03);
   --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -295,7 +301,7 @@ input[type="number"]::-webkit-inner-spin-button {
 .segmented button:hover { color: var(--ink); }
 .segmented button[aria-pressed="true"] {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -499,7 +505,7 @@ input[type="search"] { min-width: 280px; }
 .btn:active { transform: translateY(1px); }
 .btn.primary {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--ink);
 }
 .btn.primary:hover { background: #000; }
@@ -810,7 +816,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   height: 26px;
   border-radius: 50%;
   background: var(--bronze);
-  color: #fff;
+  color: var(--on-accent);
   display: grid;
   place-items: center;
   font-weight: 700;
@@ -1009,7 +1015,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   justify-content: center;
   gap: 8px;
   background: var(--brand-navy);
-  color: #fff;
+  color: var(--on-accent);
   border: 1px solid var(--brand-navy);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1023,7 +1029,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #fff;
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -1066,7 +1072,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   bottom: 24px;
   right: 24px;
   background: var(--ink);
-  color: #fff;
+  color: var(--on-accent);
   padding: 10px 14px;
   border-radius: var(--radius-sm);
   font-size: 12.5px;
@@ -1255,7 +1261,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   height: 22px;
   border-radius: 50%;
   background: var(--low);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 13px;
   font-weight: 700;
   display: flex;
@@ -1286,7 +1292,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   z-index: 20;
   pointer-events: none;
   background: var(--ink);
-  color: #fff;
+  color: var(--on-accent);
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 11.5px;
@@ -1776,8 +1782,8 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   width: 260px;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: var(--ink);
-  color: #fff;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.5;
@@ -1826,7 +1832,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
 }
 .w-span .w-btn.is-on {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 /* ─── Multi-select picker ────────────────────────────────────────── */
@@ -1845,7 +1851,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .btn.primary:hover:not(:disabled) { background: var(--accent-2); }
 .btn:disabled { opacity: 0.45; cursor: default; }
@@ -1862,3 +1868,117 @@ label.pick.is-sel {
   background: var(--accent-soft);
 }
 label.pick .chip { flex-shrink: 0; }
+
+/* ─── Dark theme ─────────────────────────────────────────────────────
+   Built from the Ovena palette rather than a generic grey inversion:
+   brand navy carries the surfaces, cream carries the text, and the teal
+   lifts a step so it still reads as an accent against a dark ground.
+   Applied by js/theme.js, which resolves "auto" and stamps data-theme —
+   so this block exists exactly once. */
+
+:root[data-theme="dark"] {
+  /* Surfaces: navy, stepped so cards separate from the page behind them */
+  --bg: #0b1220;
+  --surface: #141d31;
+  --surface-2: #101829;
+  --surface-tint: #1b2540;
+
+  /* Hairlines in cream, not white — white reads cold against navy */
+  --line: rgba(243, 236, 222, 0.10);
+  --line-strong: rgba(243, 236, 222, 0.20);
+
+  /* Text: brand cream, stepped down for secondary and muted */
+  --ink: #f3ecde;
+  --ink-2: #cfc8ba;
+  --ink-3: #aaa396;
+  --muted: #8c8578;
+
+  /* Teal lifted for contrast on a dark ground */
+  --accent: #8fbcc7;
+  --accent-2: #a7cdd6;
+  --accent-soft: rgba(143, 188, 199, 0.14);
+  --accent-line: rgba(143, 188, 199, 0.30);
+
+  /* Albacete gold stands in for bronze — it carries on navy, bronze doesn't */
+  --bronze: #dab156;
+  --bronze-soft: rgba(218, 177, 86, 0.14);
+
+  /* Status colours lightened; the light-mode reds and greens go muddy */
+  --ok: #4ade80;
+  --watch: #fbbf24;
+  --low: #f87171;
+
+  --on-accent: #0b1220;
+  --tooltip-bg: #f3ecde;
+  --tooltip-fg: #0b1220;
+
+  /* Shadows need more depth and less opacity on a dark ground */
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.30);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 1px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.30);
+}
+
+/* The insight banner is a cream gradient in light mode — a literal colour,
+   not a token, so it has to be restated rather than inherited. */
+:root[data-theme="dark"] .insight {
+  background: linear-gradient(180deg, #1c2540 0%, #16203a 100%);
+  border-color: rgba(218, 177, 86, 0.28);
+}
+
+/* The tooltip inverts in dark mode, so its title needs a colour that reads
+   on cream rather than the brand cream it uses against navy. */
+:root[data-theme="dark"] .gloss-pop strong { color: var(--brand-navy); }
+
+:root[data-theme="dark"] .pl-table tr.pl-neg td { background: rgba(248, 113, 113, 0.10); }
+
+/* Charts and the logo are drawn for a light ground; ease them back a touch
+   rather than leaving them glaring. */
+:root[data-theme="dark"] .sidebar img,
+:root[data-theme="dark"] .brand img { filter: invert(1) hue-rotate(180deg) brightness(1.6); }
+
+/* ─── Theme switch ───────────────────────────────────────────────── */
+
+.theme-switch {
+  display: flex;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.theme-switch button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  padding: 5px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.theme-switch button:hover { color: var(--ink); }
+.theme-switch button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ─── Drag to reorder ────────────────────────────────────────────── */
+
+.w-grip { cursor: grab; }
+.w-grip:active { cursor: grabbing; }
+.w.is-dragging { opacity: 0.4; }
+.w.drop-before::before,
+.w.drop-after::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  z-index: 4;
+}
+.w.drop-before::before { left: -9px; }
+.w.drop-after::before  { right: -9px; }
