@@ -426,7 +426,7 @@ function paintEditBar() {
           <button type="button" class="btn" id="ovPickAll">Select all</button>
           <button type="button" class="btn" id="ovPickNone">Clear</button>
           <button type="button" class="btn primary" id="ovAddSel" ${selected.size ? "" : "disabled"}>
-            Add ${selected.size || ""} widget${selected.size === 1 ? "" : "s"}
+            ${selected.size ? `Add ${selected.size} widget${selected.size === 1 ? "" : "s"}` : "Add widgets"}
           </button>
         </div>
         <div class="picker">
