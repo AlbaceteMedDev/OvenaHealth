@@ -208,6 +208,9 @@ async function syncAds(range, resolve) {
           ...range,
           dimensions: [F.date, F.campaignId, F.campaignName],
           metrics: F.metrics,
+          // Required for amazon-ads: without it Catchr rejects the whole
+          // field set as an "invalid mapping" rather than ignoring it.
+          ...(platform === "amazon-ads" ? { options_report: "SPONSORED_PRODUCTS" } : {}),
           sorts: [{ field: F.date, direction: "asc" }],
         });
         if (!result.length) notes.push(`${platform} / ${account.label}: no rows in window`);
@@ -242,6 +245,7 @@ async function syncAds(range, resolve) {
           ...range,
           dimensions: [F.date, F.sku, F.asin],
           metrics: ["impressions", "clicks", "cost", "sales14d", "purchases14d"],
+          options_report: "SPONSORED_PRODUCTS",
           sorts: [{ field: F.date, direction: "asc" }],
         });
         for (const r of result) {

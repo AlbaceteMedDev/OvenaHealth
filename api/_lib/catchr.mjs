@@ -12,16 +12,16 @@
 //
 //   CATCHR_API_KEY     (required) your Catchr API key
 //   CATCHR_API_BASE    default https://api.catchr.io
-//   CATCHR_QUERY_PATH  default /query/{platform}   ({platform} is substituted)
-//   CATCHR_AUTH_STYLE  bearer (default) | x-api-key | api-key | query
+//   CATCHR_QUERY_PATH  default /api/request
+//   CATCHR_AUTH_STYLE  query (default, ?apikey=) | bearer | x-api-key | api-key
 
 const BASE = (process.env.CATCHR_API_BASE || "https://api.catchr.io").replace(/\/+$/, "");
-const QUERY_PATH = process.env.CATCHR_QUERY_PATH || "/query/{platform}";
-const AUTH_STYLE = process.env.CATCHR_AUTH_STYLE || "bearer";
+const QUERY_PATH = process.env.CATCHR_QUERY_PATH || "/api/request";
+const AUTH_STYLE = process.env.CATCHR_AUTH_STYLE || "query";
 const KEY = process.env.CATCHR_API_KEY;
 
 const AUTH_STYLES = ["bearer", "x-api-key", "api-key", "query"];
-const PATH_CANDIDATES = ["/query/{platform}", "/v1/query/{platform}", "/api/query/{platform}"];
+const PATH_CANDIDATES = ["/api/request", "/query/{platform}", "/v1/query/{platform}"];
 
 export class CatchrError extends Error {
   constructor(message, { status = null, body = null } = {}) {
@@ -32,27 +32,46 @@ export class CatchrError extends Error {
   }
 }
 
-function buildRequest(platform, body, { path = QUERY_PATH, authStyle = AUTH_STYLE } = {}) {
+function buildRequest(platform, spec, { path = QUERY_PATH, authStyle = AUTH_STYLE } = {}) {
   const url = new URL(BASE + path.replace("{platform}", encodeURIComponent(platform)));
-  const headers = { "content-type": "application/json", accept: "application/json" };
 
-  switch (authStyle) {
-    case "x-api-key":
-      headers["x-api-key"] = KEY;
-      break;
-    case "api-key":
-      headers["api-key"] = KEY;
-      break;
-    case "query":
-      url.searchParams.set("api_key", KEY);
-      break;
-    case "bearer":
-    default:
-      headers.authorization = `Bearer ${KEY}`;
-      break;
+  // Catchr's REST API is GET /api/request with everything in the query
+  // string. It is NOT the MCP's JSON-body shape, which is what this file
+  // originally assumed — that assumption produced a 404 from the gateway on
+  // every call for weeks, because /query/{platform} is not a route.
+  //
+  // Two encodings live side by side and both matter:
+  //   metrics / dimensions  comma-separated strings
+  //   accounts / filters    JSON arrays
+  url.searchParams.set("format", "json");
+  url.searchParams.set("platform", platform);
+  url.searchParams.set("accounts", JSON.stringify(spec.accounts || []));
+  url.searchParams.set("filters", JSON.stringify(spec.filters || []));
+  if (spec.dimensions?.length) url.searchParams.set("dimensions", spec.dimensions.join(","));
+  if (spec.metrics?.length) url.searchParams.set("metrics", spec.metrics.join(","));
+
+  if (spec.date === "CUSTOM") {
+    url.searchParams.set("date", "CUSTOM");
+    if (spec.start_date) url.searchParams.set("start_date", spec.start_date);
+    if (spec.end_date) url.searchParams.set("end_date", spec.end_date);
+  } else if (spec.date) {
+    url.searchParams.set("date", spec.date);
   }
 
-  return { url: url.toString(), headers, body: JSON.stringify(body) };
+  // Amazon Ads rejects any field set unless it is told which report the
+  // fields belong to. Omitting it is what produced "invalid mapping".
+  if (spec.options_report) url.searchParams.set("options_report", spec.options_report);
+
+  const headers = { accept: "application/json" };
+  switch (authStyle) {
+    case "x-api-key": headers["x-api-key"] = KEY; break;
+    case "api-key": headers["api-key"] = KEY; break;
+    case "bearer": headers.authorization = `Bearer ${KEY}`; break;
+    case "query":
+    default: url.searchParams.set("apikey", KEY); break;
+  }
+
+  return { url: url.toString(), headers };
 }
 
 // Core query. `spec` matches the Catchr query shape:
@@ -72,7 +91,7 @@ export async function query(platform, spec, opts = {}) {
   };
 
   const req = buildRequest(platform, body, opts);
-  const res = await fetch(req.url, { method: "POST", headers: req.headers, body: req.body });
+  const res = await fetch(req.url, { method: "GET", headers: req.headers });
   const text = await res.text();
 
   let parsed = null;
