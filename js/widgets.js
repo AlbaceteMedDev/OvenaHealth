@@ -375,6 +375,34 @@ export const WIDGETS = [
     },
   },
 
+  // ── SEO ───────────────────────────────────────────────────────────
+  {
+    id: "seo-organic", title: "Organic search sessions", group: "SEO", size: "kpi", spans: [3, 4, 6],
+    render: (c, span) => {
+      const t = c.seo?.totals || {};
+      const organic = t.search || 0;
+      const all = Object.values(t).reduce((a, b) => a + b, 0);
+      return kpiHtml(term("Organic sessions", "SESSIONS"), fmtNumber(organic),
+        all > 0 ? `${fmtPercent(organic / all)} of ${fmtNumber(all)} sessions` : "no sessions in window");
+    },
+  },
+  {
+    id: "seo-by-source", title: "Traffic by source", group: "SEO", size: "half", spans: [4, 6, 8, 12],
+    render: (c, span) => {
+      const t = c.seo?.totals || {};
+      const all = Object.values(t).reduce((a, b) => a + b, 0);
+      const rows = Object.entries(t).sort((a, b) => b[1] - a[1]).slice(0, rowsFor(span))
+        .map(([src, n]) => `<tr>
+          <td>${escapeHtml(src)}</td>
+          <td class="num">${fmtNumber(n)}</td>
+          <td class="num">${all > 0 ? fmtPercent(n / all) : dash}</td>
+        </tr>`);
+      return card("Traffic by source", table(
+        [{ label: "Source" }, { label: "Sessions", num: true }, { label: "Share", num: true, opt: true }],
+        rows, { span, empty: "No session data — run the SEO sync." }), { flush: true, foot: "storefront only" });
+    },
+  },
+
   // ── Operations ────────────────────────────────────────────────────
   {
     id: "sync-status", title: "Sync status", group: "Operations", size: "half", spans: [4, 6, 8, 12],
