@@ -19,6 +19,7 @@ import { escapeHtml, kpiHtml, acosTone, roasTone, fmtRatio, syncStateFor } from 
 import { renderDualLine, renderSpark, renderBars, renderLine } from "./charts.js";
 import { PLATFORM_LABELS } from "./data/live.js";
 import { term, hint } from "./glossary.js";
+import { supabase } from "./supabase.js";
 
 const dash = `<span class="muted">—</span>`;
 
@@ -558,6 +559,81 @@ export const WIDGETS = [
         height: chartHeight(span), primaryKey: "spend", secondaryKey: "revenue",
         axisLabels: [series[0].label, series[Math.floor(series.length / 2)].label, series[series.length - 1].label],
         scrub: { primaryName: "All sessions", secondaryName: "Organic", fmt: (v) => fmtNumber(v) },
+      });
+    },
+  },
+
+  {
+    id: "cost-rates", title: "Cost rates", group: "Margins", size: "half", spans: [4, 6, 8, 12],
+    render: (c, span) => {
+      const sc = c.storeCosts || {};
+      const outbound = (c.invRows || []).find((r) => r.shipToCustomer > 0)?.shipToCustomer || "";
+      const f = (label, id, val, note, step = "0.01", prefix = "$") => `
+        <tr>
+          <td>${label}<div class="muted">${escapeHtml(note)}</div></td>
+          <td class="num" style="white-space:nowrap;">
+            <span class="muted">${prefix}</span>
+            <input type="number" min="0" step="${step}" data-rate="${id}"
+                   value="${val === "" ? "" : val}" placeholder="—" style="width:96px;" />
+          </td>
+        </tr>`;
+      return card("Cost rates", `
+        ${table([{ label: "Rate" }, { label: "Value", num: true }], [
+          f("Outbound shipping", "outbound", outbound, "per unit, warehouse to customer — Shopify only"),
+          f("Payment processing", "pct", sc.payment_fee_pct ?? "", "fraction: 0.027 = 2.7%", "0.001", ""),
+          f("Payment flat fee", "flat", sc.payment_fee_flat ?? "", "per order"),
+          f("FBA storage", "storage", sc.fba_storage_month ?? "", "per month, prorated over the window"),
+        ], { span })}
+        <div class="card-body" style="display:flex;gap:10px;align-items:center;">
+          <button type="button" class="btn primary" data-rate-save>Save rates</button>
+          <span class="hint" data-rate-note></span>
+        </div>
+        <p class="muted" style="margin:0 12px 12px;font-size:12px;">
+          Payment processing was read from Shopify's own transaction records and is already correct.
+          Outbound shipping is the postage actually billed — it lives in Stamps.com, not in Shopify or
+          Amazon, because Shopify only records what the customer was charged. One figure here applies
+          to every SKU; set it per SKU later if they diverge.
+        </p>`, { flush: true });
+    },
+    draw: (el) => {
+      const btn = el.querySelector("[data-rate-save]");
+      const note = el.querySelector("[data-rate-note]");
+      if (!btn || btn.dataset.wired) return;
+      btn.dataset.wired = "1";
+      btn.addEventListener("click", async () => {
+        const val = (k) => {
+          const v = el.querySelector(`[data-rate="${k}"]`)?.value;
+          return v === "" || v == null ? null : Number(v);
+        };
+        btn.disabled = true;
+        note.textContent = "Saving…";
+        try {
+          const patch = {};
+          if (val("pct") != null) patch.payment_fee_pct = val("pct");
+          if (val("flat") != null) patch.payment_fee_flat = val("flat");
+          if (val("storage") != null) patch.fba_storage_month = val("storage");
+          if (Object.keys(patch).length) {
+            const { error } = await supabase.from("store_costs").update(patch).eq("id", "default");
+            if (error) throw error;
+          }
+          const ob = val("outbound");
+          if (ob != null) {
+            // One rate across every SKU. Applied here rather than per row
+            // because a single parcel rate is the normal case and typing it
+            // ten times invites ten different numbers.
+            const { data: rows } = await supabase.from("inventory_state").select("sku");
+            const { error } = await supabase.from("inventory_state")
+              .upsert((rows || []).map((r) => ({ sku: r.sku, ship_to_customer: ob })), { onConflict: "sku" });
+            if (error) throw error;
+          }
+          note.textContent = "Saved — reload to see it in the P&L";
+          note.className = "hint";
+        } catch (err) {
+          note.textContent = `Couldn't save: ${err.message}`;
+          note.className = "hint bad";
+        } finally {
+          btn.disabled = false;
+        }
       });
     },
   },
