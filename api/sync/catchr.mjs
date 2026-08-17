@@ -90,7 +90,7 @@ function eachDay(startIso, endIso) {
 //
 // DEADLINE_MS leaves headroom under the 60s cap to finish writing and
 // record the run — being killed mid-write is what leaves gaps.
-const DEADLINE_MS = 42_000;
+const DEADLINE_MS = 270_000;
 
 async function syncSeller(range, resolve, startedAt = Date.now()) {
   const rows = [];
