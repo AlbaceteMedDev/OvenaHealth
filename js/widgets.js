@@ -101,10 +101,10 @@ export const WIDGETS = [
               ${line("Amazon ordered sales", c.amzT.revenue, { kind: "in", note: `${fmtNumber(c.amzT.units)} units`, hintKey: "ORDERED PRODUCT SALES" })}
               ${line("Shopify net sales", c.shopT.net, { kind: "in", note: `${fmtNumber(c.shopT.orders)} orders`, hintKey: "NET SALES" })}
               ${line("Total revenue", c.revenue, { kind: "in", strong: true })}
-              ${line("Amazon fees", p.fees, { note: "referral + FBA, per unit sold", hintKey: "FBA" })}
+              ${line("Amazon fees", p.fees, { note: "referral, measured from settlement", hintKey: "FBA" })}
               ${line("Cost of goods", p.cogs, { note: "supplier invoice, per unit sold", hintKey: "COGS" })}
               ${line("Inbound shipping", p.shipping, { note: "freight to warehouse, per unit sold" })}
-              ${line("Outbound shipping", p.outbound, { note: "warehouse to customer — Shopify units only" })}
+              ${line("Outbound shipping", p.outbound, { note: "warehouse to customer — per shipment, both channels" })}
               ${line("Payment processing", p.payment, { note: "Shopify Payments; Amazon's is inside its referral fee" })}
               ${line("FBA storage", p.storage, { note: "monthly charge, prorated over the window", hintKey: "FBA" })}
               ${line("Contribution margin", p.contribution, { kind: "in", strong: true, hintKey: "CONTRIBUTION MARGIN" })}
@@ -125,8 +125,11 @@ export const WIDGETS = [
           Their revenue counts here but their COGS and shipping do not, so contribution is overstated.</div>
         </div>` : ""}
         <p class="muted" style="margin:12px 0 0;font-size:12px;">
-          Costs are applied per unit sold on Amazon. Shopify units are not cost-matched — its net sales
-          are included in revenue but its COGS is not deducted, so treat net profit as slightly optimistic.
+          Costs are per unit sold, on both channels. Amazon fees are the rates actually charged on
+          settled orders, not a published fee schedule — nearly every order here is merchant-fulfilled,
+          so it pays referral only and no FBA fulfilment. Outbound postage is a flat per-parcel estimate,
+          charged once per shipment rather than per unit, until real Stamps.com figures are loaded. Amazon&rsquo;s own service fees — inbound freight to
+          FBA and the monthly subscription — are period costs, not per-unit, and are not in this table.
         </p>
       `, { flush: false });
     },

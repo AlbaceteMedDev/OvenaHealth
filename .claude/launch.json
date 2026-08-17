@@ -4,8 +4,12 @@
     {
       "name": "ovena-portal",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8231"],
-      "port": 8231
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8247"
+      ],
+      "port": 8247
     }
   ]
 }

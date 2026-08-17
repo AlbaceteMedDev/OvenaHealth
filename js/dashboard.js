@@ -21,7 +21,7 @@ import {
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
 import { bucketSeries, isPartialBucket } from "./series.js";
-import { seedInventory, skuMap } from "./data/inventory.js";
+import { seedInventory, skuMap, resolveShopifySku } from "./data/inventory.js";
 import { getState, subscribe } from "./state.js";
 import { supabase } from "./supabase.js";
 import { exportButton, wireExport } from "./export.js";
@@ -427,14 +427,51 @@ function rebuildInventory() {
     cogs += s.units * c.cogs;
     shipping += s.units * c.shipCost;
   }
-  // Outbound shipping applies to Shopify units only. Amazon orders are
-  // picked, packed and shipped inside the FBA fee, so charging them again
-  // would double count fulfilment on the majority of volume.
-  const shopUnits = ctx.shopT.units || 0;
-  const avgOutbound = invRows.length
-    ? invRows.reduce((a, r) => a + r.shipToCustomer, 0) / invRows.filter((r) => r.shipToCustomer > 0).length || 0
+  // Shopify units also carry COGS and inbound freight. They used to carry
+  // neither: costs were charged only against ctx.bySku, which is Amazon, so
+  // every storefront sale landed in revenue at 100% margin. Lines that don't
+  // resolve to a catalog SKU stay uncosted and are counted, rather than
+  // being charged a guessed rate.
+  let shopCostedUnits = 0;
+  for (const r of ctx.shopSales?.rows || []) {
+    const units = r.net_quantity || 0;
+    if (units <= 0) continue;
+    const c = costBySku.get(resolveShopifySku(r.product_title, r.variant_title));
+    if (!c) { uncosted += units; continue; }
+    cogs += units * c.cogs;
+    shipping += units * c.shipCost;
+    shopCostedUnits += units;
+  }
+
+  // Outbound shipping. This used to be charged on Shopify units alone, on
+  // the reasoning that Amazon orders are picked, packed and shipped inside
+  // the FBA fee. That is not what is happening: 128 of 130 Amazon order
+  // items are merchant-fulfilled, so Ovena buys that postage itself, and
+  // leaving it out understated cost by roughly $550 on 125 units.
+  //
+  // The genuine FBA lines are excluded by their "-FBA" seller SKU suffix,
+  // which is how the FBA listings are named. Once amz_orders lands this
+  // should read fulfillment_channel instead — the report states it outright
+  // rather than leaving it to a naming convention.
+  // Charged per SHIPMENT, not per unit. The rates are parcel estimates —
+  // ground from California for one box — so a two-unit order buys one label,
+  // not two. Amazon averages 1.21 units per order, and billing per unit
+  // overstated postage by $96.69 across this window.
+  //
+  // Amazon's shipment count is approximated by order LINES, which is the
+  // closest figure amz_sales_daily holds: 119 lines against 103 real orders,
+  // because an order containing two different SKUs is counted twice. Still
+  // closer than units, and exact once amz_orders lands with real order ids.
+  const shopShipments = ctx.shopT.orders || 0;
+  const amzShipments = (ctx.amz?.rows || []).reduce(
+    (n, r) => n + (/-FBA$/i.test(r.amazon_sku || "") ? 0 : (r.order_items || 0)),
+    0,
+  );
+  const rated = invRows.filter((r) => r.shipToCustomer > 0);
+  const avgOutbound = rated.length
+    ? rated.reduce((a, r) => a + r.shipToCustomer, 0) / rated.length
     : 0;
-  const outbound = shopUnits * (Number.isFinite(avgOutbound) ? avgOutbound : 0);
+  const outbound = (shopShipments + amzShipments) * (Number.isFinite(avgOutbound) ? avgOutbound : 0);
 
   // Payment processing: a percentage of Shopify net plus a flat amount per
   // order. Amazon's cut is already inside its referral fee.
@@ -443,7 +480,10 @@ function rebuildInventory() {
                 + (ctx.shopT.orders || 0) * (Number(sc.payment_fee_flat) || 0);
 
   // Storage is a monthly charge, prorated across the window being viewed.
-  const days = Math.max(1, ctx.daily.length);
+  // Counted in calendar days, not buckets: ctx.daily holds one entry per
+  // BUCKET, so at week grain this was billing four days for a four-week
+  // window and at month grain one day for a month.
+  const days = Math.max(1, ctx.available || ctx.daily.length);
   const storage = ((Number(sc.fba_storage_month) || 0) / 30) * days;
 
   const contribution = ctx.revenue - fees - cogs - shipping - outbound - payment - storage;

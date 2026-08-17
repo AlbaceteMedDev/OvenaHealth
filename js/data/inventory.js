@@ -182,6 +182,54 @@ export function resolveSku(amazonSku, asin) {
   return null;
 }
 
+// Resolve a Shopify line to a catalog SKU. Shopify reports a product title
+// and a variant title, never a SKU, so the P&L had no way to charge COGS
+// against storefront sales and simply left them uncosted — which made every
+// margin on the Overview tab look better than it was.
+//
+// Matching is on normalised text: lowercased, curly quotes and the U+00D7
+// multiplication sign folded to ASCII (the storefront emits BOTH "2 in x
+// 5 ft" and "2 in × 5 ft" for the same variant), and runs of whitespace
+// collapsed. Returns null for anything unrecognised — an unmatched line
+// stays uncosted and is counted, rather than being charged a guessed rate.
+const norm = (s) =>
+  String(s || "")
+    .toLowerCase()
+    .replace(/[×✕✖]/g, "x")
+    .replace(/[‘’“”]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const SHOPIFY_PRODUCT_SKUS = [
+  { product: "compression socks", variant: "xl", sku: "CS-KHC-XL-BLK" },
+  { product: "compression socks", variant: "l", sku: "CS-KHC-L-BLK" },
+  { product: "compression socks", variant: "m", sku: "CS-KHC-M-BLK" },
+  { product: "compression socks", variant: "s", sku: "CS-KHC-S-BLK" },
+  { product: "hydrocolloid roll", variant: "16 ft", sku: "HC-ROLL16FT" },
+  { product: "hydrocolloid roll", variant: "5 ft", sku: "HC-ROLL5FT" },
+  { product: "collagen wound dressing", variant: "4x4", sku: "CWD-4X4" },
+  { product: "collagen wound dressing", variant: "2x2", sku: "CWD-2X2" },
+  { product: "collagen wound powder", variant: null, sku: "CWD-PWD" },
+  { product: "sock aid", variant: null, sku: "SOCK-AID" },
+];
+
+export function resolveShopifySku(productTitle, variantTitle) {
+  const p = norm(productTitle);
+  const v = norm(variantTitle);
+  for (const rule of SHOPIFY_PRODUCT_SKUS) {
+    if (!p.includes(rule.product)) continue;
+    if (!rule.variant) return skuMap.has(rule.sku) ? rule.sku : null;
+    // Size variants arrive as "L / 1 Pair" — match the size token on its own
+    // so "L" cannot also match the "l" inside "XL".
+    const tokens = v.split(/[^a-z0-9]+/).filter(Boolean);
+    const hit = rule.variant.includes(" ")
+      ? v.includes(rule.variant)
+      : tokens.includes(rule.variant);
+    if (hit) return skuMap.has(rule.sku) ? rule.sku : null;
+  }
+  return null;
+}
+
 export const marketplaces = [
   { id: "ATVPDKIKX0DER", name: "Amazon.com", country: "US", currency: "USD" },
   { id: "A2EUQ1WTGCTBG2", name: "Amazon.ca", country: "CA", currency: "CAD" },
