@@ -79,7 +79,11 @@ export const WIDGETS = [
   {
     id: "contribution", title: "Contribution margin", group: "Headline", size: "kpi", spans: [3, 4, 6],
     render: (c, span) => kpiHtml(term("Contribution", "CONTRIBUTION MARGIN"), fmtCurrency(c.pl.contribution),
-      c.revenue > 0 ? `${fmtPercent(c.pl.contribution / c.revenue)} of revenue` : "—"),
+      // "52.2% of revenue" told you the ratio but not what the number IS.
+      // Say what it is left after, and what it has not yet paid for.
+      c.revenue > 0
+        ? `left after product + shipping costs, before ads — ${fmtPercent(c.pl.contribution / c.revenue)} of revenue`
+        : "left after product + shipping costs, before ads"),
   },
   {
     id: "pl-breakdown", title: "Profit & loss breakdown", group: "Headline", size: "full", spans: [6, 8, 12],
