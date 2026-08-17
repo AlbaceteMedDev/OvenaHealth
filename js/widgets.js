@@ -403,6 +403,30 @@ export const WIDGETS = [
     },
   },
 
+  {
+    id: "seo-trend", title: "Organic search over time", group: "SEO", size: "half", spans: [6, 8, 12],
+    render: (c, span) => card("Organic search over time", `
+      <svg class="chart" data-chart="seotrend"></svg>
+      <div class="legend">
+        <span><span class="dot ink"></span>All sessions</span>
+        <span><span class="dot accent"></span>Organic search</span>
+      </div>`, { foot: `${(c.seo?.daily || []).length} days` }),
+    draw: (el, c, span) => {
+      const svg = el.querySelector('[data-chart="seotrend"]');
+      const d = c.seo?.daily || [];
+      if (!svg || !d.length) return;
+      const series = d.map((x) => ({
+        key: x.date, label: fmtShortDate(x.date), tipLabel: fmtShortDate(x.date),
+        spend: x.total, revenue: x.search,
+      }));
+      renderDualLine(svg, series, {
+        height: chartHeight(span), primaryKey: "spend", secondaryKey: "revenue",
+        axisLabels: [series[0].label, series[Math.floor(series.length / 2)].label, series[series.length - 1].label],
+        scrub: { primaryName: "All sessions", secondaryName: "Organic", fmt: (v) => fmtNumber(v) },
+      });
+    },
+  },
+
   // ── Operations ────────────────────────────────────────────────────
   {
     id: "sync-status", title: "Sync status", group: "Operations", size: "half", spans: [4, 6, 8, 12],

@@ -126,6 +126,20 @@ export function fetchFbaInventory() {
 // Excluded products (Juzo) are filtered here rather than in SQL so the
 // rule lives with the rest of the reporting policy in config.js, and so a
 // stale synced row can never leak into a total.
+// Storefront sessions by acquisition source. Written by the SEO sync; the
+// "search" bucket is the organic number the SEO widgets trend.
+export function fetchSeoSessions(days) {
+  return cached("seoSessions", { days }, () =>
+    run(
+      supabase
+        .from("seo_sessions_daily")
+        .select("date, referrer_source, sessions")
+        .gte("date", startDateFor(days))
+        .order("date", { ascending: true }),
+    ),
+  );
+}
+
 export function fetchShopSales(days) {
   return cached("shopSales", { days }, async () => {
     const out = await run(

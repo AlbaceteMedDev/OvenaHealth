@@ -13,7 +13,7 @@ export const mountOverview = makeDashboard({
   prefix: "ov",
   title: "Overview",
   subtitle: "Every channel together — revenue, advertising, and what it costs to grow.",
-  groups: ["Headline", "Amazon", "Shopify", "Advertising", "Inventory", "Margins", "Operations"],
+  groups: ["Headline", "Amazon", "Shopify", "Advertising", "SEO", "Inventory", "Margins", "Operations"],
   platform: null,
   defaultLayout: [
     "total-revenue", "contribution", "net-profit", "ad-tacos",

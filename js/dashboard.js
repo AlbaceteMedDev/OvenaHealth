@@ -16,6 +16,7 @@
 
 import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
+  fetchSeoSessions,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
@@ -165,9 +166,10 @@ async function render() {
   const body = panelEl.querySelector(`#${P}Body`);
   body.innerHTML = loadingBox();
 
-  const [amz, shop, shopSales, ads, runs, fba, savedLayout] = await Promise.all([
+  const [amz, shop, shopSales, ads, runs, fba, seoRows, savedLayout] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
+    fetchSeoSessions(period),
     layout ? Promise.resolve(layout) : loadLayout(),
   ]);
   layout = savedLayout;
@@ -295,8 +297,28 @@ async function render() {
              revenue: rev, partial, tipLabel: partial ? `${d.label} (partial)` : d.label };
   });
 
+  // Sessions by source, plus a per-day series so a chart can trend organic
+  // against everything else. Missing table or empty result degrades to
+  // zeroed totals rather than throwing — the widgets show an empty state.
+  const seoTotals = {};
+  const seoByDay = new Map();
+  for (const r of seoRows?.rows || []) {
+    const src = r.referrer_source || "unknown";
+    const n = Number(r.sessions) || 0;
+    seoTotals[src] = (seoTotals[src] || 0) + n;
+    const slot = seoByDay.get(r.date) || { date: r.date, total: 0, search: 0 };
+    slot.total += n;
+    if (src === "search") slot.search += n;
+    seoByDay.set(r.date, slot);
+  }
+  const seo = {
+    totals: seoTotals,
+    daily: [...seoByDay.values()].sort((a, b) => (a.date < b.date ? -1 : 1)),
+    error: seoRows?.error || null,
+  };
+
   ctx = {
-    period, grain, amz, shop, ads: { rows: adRows }, runs, fba,
+    period, grain, amz, shop, ads: { rows: adRows }, runs, fba, seo,
     amzT, shopT, adT, adM, revenue, bySku, byProduct,
     spendByPlatform, campaigns, salesLog, daily,
     available: daysAvailable(),
