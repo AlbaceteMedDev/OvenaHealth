@@ -16,7 +16,7 @@
 
 import { fmtCurrency, fmtNumber, fmtPercent, fmtShortDate, fmtDateTime } from "./format.js";
 import { escapeHtml, kpiHtml, acosTone, roasTone, fmtRatio, syncStateFor } from "./ui.js";
-import { renderDualLine, renderSpark, renderBars } from "./charts.js";
+import { renderDualLine, renderSpark, renderBars, renderLine } from "./charts.js";
 import { PLATFORM_LABELS } from "./data/live.js";
 import { term, hint } from "./glossary.js";
 
@@ -223,6 +223,132 @@ export const WIDGETS = [
           credits the campaign, and two sock campaigns running together can't be told apart here.
           Per-SKU certainty needs <code>ads_sku_daily</code>, which has no rows yet.
         </p>`, { flush: true, foot: `${c.salesLog.length} SKU-days` });
+    },
+  },
+
+  {
+    id: "amz-sales-vs-spend", title: "Amazon sales vs ad spend", group: "Amazon", size: "full", spans: [6, 8, 12],
+    render: (c, span) => card("Amazon sales vs ad spend", `
+      <svg class="chart" data-chart="amzspend"></svg>
+      <div class="legend">
+        <span><span class="dot ink"></span>Ad spend</span>
+        <span><span class="dot accent"></span>Ordered sales</span>
+      </div>`, { foot: "hover to inspect any day" }),
+    draw: (el, c, span) => {
+      const svg = el.querySelector('[data-chart="amzspend"]');
+      if (!svg || !c.daily.length) return;
+      const s = c.daily.map((d) => ({ ...d, revenue: d.amazon }));
+      renderDualLine(svg, s, {
+        height: chartHeight(span), primaryKey: "spend", secondaryKey: "revenue",
+        axisLabels: [s[0].label, s[Math.floor(s.length / 2)].label, s[s.length - 1].label],
+        scrub: { primaryName: "Ad spend", secondaryName: "Ordered sales", fmt: (v) => fmtCurrency(v) },
+      });
+    },
+  },
+  {
+    id: "amz-sessions-chart", title: "Sessions over time", group: "Amazon", size: "half", spans: [4, 6, 8, 12],
+    render: (c, span) => card(term("Sessions") + " over time", `
+      <svg class="chart" data-chart="amzsess"></svg>`,
+      { foot: `${fmtNumber(c.amzT.sessions)} total` }),
+    draw: (el, c, span) => {
+      const svg = el.querySelector('[data-chart="amzsess"]');
+      if (!svg || !c.daily.length) return;
+      renderLine(svg, c.daily.map((d) => ({ label: d.label, value: d.sessions })), {
+        height: chartHeight(span),
+        axisLabels: [c.daily[0].label, c.daily[Math.floor(c.daily.length / 2)].label, c.daily[c.daily.length - 1].label],
+        scrub: { name: "Sessions", fmt: (v) => fmtNumber(v) },
+      });
+    },
+  },
+  {
+    id: "amz-by-day", title: "By day", group: "Amazon", size: "full", spans: [6, 8, 12],
+    render: (c, span) => {
+      const rows = [...c.daily].reverse().slice(0, rowsFor(span)).map((d) => `<tr>
+        <td class="muted">${escapeHtml(d.label)}${d.partial ? ' <span class="chip">partial</span>' : ""}</td>
+        <td class="num">${fmtCurrency(d.amazon)}</td>
+        <td class="num">${fmtNumber(d.units)}</td>
+        <td class="num w-opt">${fmtNumber(d.sessions)}</td>
+        <td class="num w-opt">${d.sessions > 0 ? fmtPercent(d.cvr) : dash}</td>
+        <td class="num">${fmtCurrency(d.spend)}</td>
+        <td class="num">${d.amazon > 0 ? fmtPercent(d.spend / d.amazon) : dash}</td>
+      </tr>`);
+      return card("By day", table(
+        [{ label: "Date" }, { label: "Revenue", num: true }, { label: "Units", num: true },
+         { label: "Sessions", num: true, opt: true, hint: "SESSIONS" },
+         { label: "CVR", num: true, opt: true, hint: "CVR" },
+         { label: "Ad spend", num: true }, { label: "TACOS", num: true, hint: "TACOS" }],
+        rows, { span, empty: "No days in this window." }), { flush: true, foot: "most recent first" });
+    },
+  },
+  {
+    id: "amz-product-ads", title: "Products with ad spend", group: "Amazon", size: "full", spans: [6, 8, 12],
+    render: (c, span) => {
+      const inv = c.invRows ? new Map(c.invRows.map((r) => [r.sku, r])) : new Map();
+      const rows = [...c.bySku].sort((a, b) => b.revenue - a.revenue).slice(0, rowsFor(span)).map((s) => {
+        const ad = c.adBySku?.get(s.sku) || { cost: 0, sales: 0, clicks: 0 };
+        const cogs = inv.get(s.sku)?.cogs || 0;
+        const contribution = s.revenue - cogs * s.units - ad.cost;
+        const acos = ad.sales > 0 ? ad.cost / ad.sales : null;
+        return `<tr>
+          <td><span class="sku-cell">${escapeHtml(s.sku)}</span><div class="muted">${escapeHtml(s.variant || "")}</div></td>
+          <td class="num">${fmtNumber(s.units)}</td>
+          <td class="num">${fmtCurrency(s.revenue)}</td>
+          <td class="num">${ad.cost > 0 ? fmtCurrency(ad.cost) : dash}</td>
+          <td class="num w-opt">${acos == null ? dash : `<span class="mpill ${acos <= 0.3 ? "ok" : acos <= 1 ? "watch" : "low"}">${fmtPercent(acos)}</span>`}</td>
+          <td class="num">${cogs > 0 ? `<strong>${fmtCurrency(contribution)}</strong>` : dash}</td>
+        </tr>`;
+      });
+      return card("Products with ad spend", `
+        ${table([{ label: "SKU" }, { label: "Units", num: true }, { label: "Revenue", num: true },
+                 { label: "Ad spend", num: true }, { label: "ACOS", num: true, opt: true, hint: "ACOS" },
+                 { label: "Contribution", num: true, hint: "CONTRIBUTION MARGIN" }],
+                rows, { span, empty: "No sales in this window." })}
+        <p class="muted" style="margin:12px;font-size:12px;">
+          Contribution is revenue less COGS and ad spend for that SKU. It is blank where no cost is
+          on file rather than assuming zero. Ad spend comes from Amazon's advertised-SKU report — the
+          only place spend ties to a product, which is why this view exists for Amazon and nowhere else.
+        </p>`, { flush: true, foot: "by revenue" });
+    },
+  },
+  {
+    id: "amz-not-selling", title: "Not selling", group: "Amazon", size: "half", spans: [4, 6, 8, 12],
+    render: (c, span) => {
+      const sold = new Set(c.bySku.filter((s) => s.units > 0).map((s) => s.sku));
+      const idle = (c.invRows || []).filter((r) => r.retail > 0 && !sold.has(r.sku)).slice(0, rowsFor(span));
+      const rows = idle.map((r) => `<tr>
+        <td><span class="sku-cell">${escapeHtml(r.sku)}</span></td>
+        <td class="muted">${escapeHtml(r.variant || r.product)}</td>
+        <td class="num w-opt">${fmtNumber(r.total)}</td>
+      </tr>`);
+      return card("Not selling", table(
+        [{ label: "SKU" }, { label: "Product" }, { label: "On hand", num: true, opt: true }],
+        rows, { span, empty: "Every stocked SKU sold in this window." }),
+        { flush: true, foot: "no orders in window" });
+    },
+  },
+  {
+    id: "shop-by-product-chart", title: "Shopify revenue by product", group: "Shopify", size: "half", spans: [4, 6, 8, 12],
+    render: (c, span) => card("Revenue by product", `<svg class="chart" data-chart="shopprod"></svg>`,
+      { foot: "net of refunds" }),
+    draw: (el, c, span) => {
+      const svg = el.querySelector('[data-chart="shopprod"]');
+      const p = (c.byProduct || []).slice(0, 8);
+      if (!svg || !p.length) return;
+      renderBars(svg, p.map((x) => ({ label: x.product.slice(0, 18), value: x.net })), {
+        height: chartHeight(span), valueFmt: (v) => fmtCurrency(v),
+      });
+    },
+  },
+  {
+    id: "shop-by-day", title: "Shopify by day", group: "Shopify", size: "full", spans: [6, 8, 12],
+    render: (c, span) => {
+      const rows = [...c.daily].reverse().filter((d) => d.shopify !== 0).slice(0, rowsFor(span)).map((d) => `<tr>
+        <td class="muted">${escapeHtml(d.label)}</td>
+        <td class="num"><strong>${fmtCurrency(d.shopify)}</strong></td>
+      </tr>`);
+      return card("Shopify by day", table(
+        [{ label: "Date" }, { label: "Net sales", num: true, hint: "NET SALES" }],
+        rows, { span, empty: "No storefront sales in this window." }), { flush: true, foot: "most recent first" });
     },
   },
 

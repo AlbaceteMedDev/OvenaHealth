@@ -16,7 +16,7 @@
 
 import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
-  fetchSeoSessions,
+  fetchSeoSessions, fetchAdsBySku,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
@@ -166,10 +166,11 @@ async function render() {
   const body = panelEl.querySelector(`#${P}Body`);
   body.innerHTML = loadingBox();
 
-  const [amz, shop, shopSales, ads, runs, fba, seoRows, savedLayout] = await Promise.all([
+  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, savedLayout] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
     fetchSeoSessions(period),
+    fetchAdsBySku(period),
     layout ? Promise.resolve(layout) : loadLayout(),
   ]);
   layout = savedLayout;
@@ -280,20 +281,31 @@ async function render() {
   // Daily blended series
   const todayIso = new Date().toISOString().slice(0, 10);
   const merged = new Map();
-  const fold = (rows, pick, keys) => {
-    for (const b of bucketSeries(rows, grain, pick)) {
+  const fold = (rows, pick, keys, preBucketed = false) => {
+    for (const b of (preBucketed ? rows : bucketSeries(rows, grain, pick))) {
       const slot = merged.get(b.key) || { key: b.key, label: b.label };
       for (const k of keys) slot[k] = (slot[k] || 0) + (b[k] || 0);
       merged.set(b.key, slot);
     }
   };
-  fold(amz.rows, (r) => ({ amazon: Number(r.ordered_sales) || 0 }), ["amazon"]);
+  fold(amz.rows, (r) => ({ amazon: Number(r.ordered_sales) || 0, units: r.units_ordered || 0 }), ["amazon", "units"]);
+  // Sessions are reported per ASIN and repeated on every SKU row for that
+  // listing, so they are deduped per (bucket, ASIN) rather than summed.
+  fold(
+    bucketSeries(amz.rows, grain, (r) => ({ sessions: r.sessions || 0, pageViews: r.page_views || 0 }),
+      { dedupe: (r) => r.asin || r.amazon_sku }),
+    (b) => ({ sessions: b.sessions || 0, pageViews: b.pageViews || 0 }),
+    ["sessions", "pageViews"],
+    true,
+  );
   fold(shop.rows, (r) => ({ shopify: Number(r.net_sales) || 0 }), ["shopify"]);
   fold(adRows, (r) => ({ spend: Number(r.cost) || 0 }), ["spend"]);
   const daily = [...merged.values()].sort((a, b) => (a.key < b.key ? -1 : 1)).map((d) => {
     const partial = isPartialBucket(d.key, grain, DATA_START, todayIso);
     const rev = (d.amazon || 0) + (d.shopify || 0);
     return { ...d, amazon: d.amazon || 0, shopify: d.shopify || 0, spend: d.spend || 0,
+             units: d.units || 0, sessions: d.sessions || 0, pageViews: d.pageViews || 0,
+             cvr: (d.sessions || 0) > 0 ? (d.units || 0) / d.sessions : 0,
              revenue: rev, partial, tipLabel: partial ? `${d.label} (partial)` : d.label };
   });
 
@@ -317,8 +329,23 @@ async function render() {
     error: seoRows?.error || null,
   };
 
+  // Per-SKU ad spend. This is the join that makes per-product ACOS real —
+  // it exists only for Amazon, because only Amazon Ads reports an
+  // advertised SKU.
+  const adBySku = new Map();
+  for (const r of adsBySku?.rows || []) {
+    const key = r.sku || r.amazon_sku;
+    if (!key) continue;
+    const a = adBySku.get(key) || { cost: 0, sales: 0, clicks: 0 };
+    a.cost += Number(r.cost) || 0;
+    a.sales += Number(r.attributed_sales) || 0;
+    a.clicks += Number(r.clicks) || 0;
+    adBySku.set(key, a);
+  }
+
   ctx = {
-    period, grain, amz, shop, ads: { rows: adRows }, runs, fba, seo,
+    period, grain, amz, shop, ads: { rows: adRows }, runs, fba, seo, adBySku,
+    shopSales,
     amzT, shopT, adT, adM, revenue, bySku, byProduct,
     spendByPlatform, campaigns, salesLog, daily,
     available: daysAvailable(),
