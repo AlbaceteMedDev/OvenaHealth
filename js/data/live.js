@@ -140,6 +140,13 @@ export function fetchSeoSessions(days) {
   );
 }
 
+// Store-wide rates that are not per-SKU: payment processing and storage.
+export function fetchStoreCosts() {
+  return cached("storeCosts", {}, () =>
+    run(supabase.from("store_costs").select("*").eq("id", "default")),
+  );
+}
+
 export function fetchShopSales(days) {
   return cached("shopSales", { days }, async () => {
     const out = await run(

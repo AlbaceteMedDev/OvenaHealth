@@ -16,7 +16,7 @@
 
 import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
-  fetchSeoSessions, fetchAdsBySku,
+  fetchSeoSessions, fetchAdsBySku, fetchStoreCosts,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
@@ -166,11 +166,12 @@ async function render() {
   const body = panelEl.querySelector(`#${P}Body`);
   body.innerHTML = loadingBox();
 
-  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, savedLayout] = await Promise.all([
+  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, savedLayout] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
     fetchSeoSessions(period),
     fetchAdsBySku(period),
+    fetchStoreCosts(),
     layout ? Promise.resolve(layout) : loadLayout(),
   ]);
   layout = savedLayout;
@@ -345,6 +346,7 @@ async function render() {
 
   ctx = {
     period, grain, amz, shop, ads: { rows: adRows }, runs, fba, seo, adBySku,
+    storeCosts: (storeCostRows?.rows || [])[0] || {},
     shopSales,
     amzT, shopT, adT, adM, revenue, bySku, byProduct,
     spendByPlatform, campaigns, salesLog, daily,
@@ -379,6 +381,7 @@ function rebuildInventory() {
       sku: row.sku, product: row.product, variant: row.variant,
       retail: row.suggestedPrice || 0, reorderLevel: row.reorderLevel || 0,
       cogs: s.cogs || 0, amazonFee: s.amazonFee || 0, shipCost: s.shipCost || 0,
+      shipToCustomer: s.shipToCustomer || 0,
       fba: fbaQty, warehouse, total: fbaQty + warehouse,
     };
   });
@@ -399,11 +402,37 @@ function rebuildInventory() {
     cogs += s.units * c.cogs;
     shipping += s.units * c.shipCost;
   }
-  const contribution = ctx.revenue - fees - cogs - shipping;
+  // Outbound shipping applies to Shopify units only. Amazon orders are
+  // picked, packed and shipped inside the FBA fee, so charging them again
+  // would double count fulfilment on the majority of volume.
+  const shopUnits = ctx.shopT.units || 0;
+  const avgOutbound = invRows.length
+    ? invRows.reduce((a, r) => a + r.shipToCustomer, 0) / invRows.filter((r) => r.shipToCustomer > 0).length || 0
+    : 0;
+  const outbound = shopUnits * (Number.isFinite(avgOutbound) ? avgOutbound : 0);
+
+  // Payment processing: a percentage of Shopify net plus a flat amount per
+  // order. Amazon's cut is already inside its referral fee.
+  const sc = ctx.storeCosts || {};
+  const payment = (ctx.shopT.net || 0) * (Number(sc.payment_fee_pct) || 0)
+                + (ctx.shopT.orders || 0) * (Number(sc.payment_fee_flat) || 0);
+
+  // Storage is a monthly charge, prorated across the window being viewed.
+  const days = Math.max(1, ctx.daily.length);
+  const storage = ((Number(sc.fba_storage_month) || 0) / 30) * days;
+
+  const contribution = ctx.revenue - fees - cogs - shipping - outbound - payment - storage;
   ctx.invRows = invRows;
   ctx.invT = invT;
   ctx.pl = {
-    fees, cogs, shipping, contribution, uncosted,
+    fees, cogs, shipping, outbound, payment, storage, contribution, uncosted,
+    // Which lines have no rate on file, so the P&L can say "not recorded"
+    // instead of showing a $0.00 cost that reads as a fact.
+    unset: [
+      outbound === 0 && shopUnits > 0 ? "outbound shipping" : null,
+      payment === 0 && (ctx.shopT.orders || 0) > 0 ? "payment processing" : null,
+      storage === 0 ? "FBA storage" : null,
+    ].filter(Boolean),
     adSpend: ctx.adT.cost, net: contribution - ctx.adT.cost,
   };
 }

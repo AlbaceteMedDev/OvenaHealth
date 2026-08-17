@@ -103,12 +103,21 @@ export const WIDGETS = [
               ${line("Amazon fees", p.fees, { note: "referral + FBA, per unit sold", hintKey: "FBA" })}
               ${line("Cost of goods", p.cogs, { note: "supplier invoice, per unit sold", hintKey: "COGS" })}
               ${line("Inbound shipping", p.shipping, { note: "freight to warehouse, per unit sold" })}
+              ${line("Outbound shipping", p.outbound, { note: "warehouse to customer — Shopify units only" })}
+              ${line("Payment processing", p.payment, { note: "Shopify Payments; Amazon's is inside its referral fee" })}
+              ${line("FBA storage", p.storage, { note: "monthly charge, prorated over the window", hintKey: "FBA" })}
               ${line("Contribution margin", p.contribution, { kind: "in", strong: true, hintKey: "CONTRIBUTION MARGIN" })}
               ${line("Advertising", p.adSpend, { note: c.spendByPlatform.map((x) => x.label).join(", ") || "no spend" })}
               ${line("Net profit", p.net, { kind: p.net < 0 ? "neg" : "in", strong: true })}
             </tbody>
           </table>
         </div>
+        ${p.unset?.length ? `<div class="insight" style="margin-top:12px;">
+          <div class="ico">!</div>
+          <div class="body"><strong>No rate on file for ${escapeHtml(p.unset.join(", "))}.</strong>
+          Those lines read $0.00 because nothing has been entered, not because they are free —
+          so contribution below is higher than reality. Set them on the Margins tab.</div>
+        </div>` : ""}
         ${p.uncosted > 0 ? `<div class="insight" style="margin-top:12px;">
           <div class="ico">!</div>
           <div class="body"><strong>${fmtNumber(p.uncosted)} units sold have no cost on file.</strong>
