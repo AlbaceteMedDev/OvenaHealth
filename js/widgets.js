@@ -549,6 +549,46 @@ export const WIDGETS = [
   },
 
   {
+    id: "seo-sessions", title: "Storefront sessions", group: "SEO", size: "kpi", spans: [3, 4, 6],
+    render: (c, span) => {
+      const days = (c.seo?.daily || []).length;
+      const all = Object.values(c.seo?.totals || {}).reduce((a, b) => a + b, 0);
+      return kpiHtml(term("Storefront sessions", "SESSIONS"), fmtNumber(all),
+        days ? `${fmtNumber(Math.round(all / days))} a day across ${fmtNumber(days)} days` : "no sessions in window");
+    },
+  },
+  {
+    id: "seo-direct-share", title: "Direct vs discovered", group: "SEO", size: "kpi", spans: [3, 4, 6],
+    render: (c, span) => {
+      // Direct means the visitor already knew the address — typing it, a
+      // bookmark, or a link with no referrer. It is the share that marketing
+      // did NOT have to earn, which is why it sits beside organic rather
+      // than being folded into a single "traffic" number.
+      const t = c.seo?.totals || {};
+      const all = Object.values(t).reduce((a, b) => a + b, 0);
+      const direct = t.direct || 0;
+      return kpiHtml("Direct traffic", all > 0 ? fmtPercent(direct / all) : dash,
+        all > 0 ? `${fmtNumber(direct)} of ${fmtNumber(all)} — arrived already knowing the address` : "no sessions in window");
+    },
+  },
+  {
+    id: "seo-by-day", title: "Sessions by day", group: "SEO", size: "half", spans: [6, 8, 12],
+    render: (c, span) => {
+      const rows = [...(c.seo?.daily || [])].reverse().slice(0, rowsFor(span)).map((d) => `<tr>
+          <td>${escapeHtml(fmtShortDate(d.date))}</td>
+          <td class="num">${fmtNumber(d.total)}</td>
+          <td class="num">${fmtNumber(d.search)}</td>
+          <td class="num w-opt">${d.total > 0 ? fmtPercent(d.search / d.total) : dash}</td>
+        </tr>`);
+      return card("Sessions by day", table(
+        [{ label: "Day" }, { label: "All", num: true }, { label: "Organic", num: true },
+         { label: "Organic share", num: true, opt: true }],
+        rows, { span, empty: "No session data — run the SEO sync." }),
+        { flush: true, foot: "most recent first" });
+    },
+  },
+
+  {
     id: "seo-trend", title: "Organic search over time", group: "SEO", size: "half", spans: [6, 8, 12],
     render: (c, span) => card("Organic search over time", `
       <svg class="chart" data-chart="seotrend"></svg>

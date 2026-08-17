@@ -103,12 +103,21 @@ function autoFlow(items) {
   return items;
 }
 
+// Ids this scope is allowed to place. A saved layout is filtered against
+// THIS, not the global widget map — otherwise a layout saved while a group
+// still belonged to the tab keeps rendering those widgets after the group
+// moves away, which is the scope leak the tab split is meant to prevent.
+// SEO left the Shopify tab this way and its widgets stayed on saved
+// dashboards until this filter existed.
+const CATALOG_IDS = new Set(CATALOG.map((w) => w.id));
+
 function normalize(saved) {
   if (!Array.isArray(saved)) return null;
   const out = [];
   for (const entry of saved) {
     const id = typeof entry === "string" ? entry : entry?.id;
     if (!WIDGET_MAP.has(id)) continue;          // widget removed from the catalogue
+    if (!CATALOG_IDS.has(id)) continue;         // widget not in THIS tab's scope
     const raw = typeof entry === "object" ? Number(entry.w) : NaN;
     const w = allowedSpans(id).includes(raw) ? raw : defaultSpan(id);
     const xr = Number(entry?.x), yr = Number(entry?.y);
@@ -551,7 +560,11 @@ function paint() {
       </div>`;
   }).join("");
 
-  body.innerHTML = `
+  // The revenue-definitions note only belongs on tabs that actually report
+  // revenue. On a traffic-only tab it is noise about numbers the tab does
+  // not show — SEO was opening with a paragraph about TACOS and FBA fees.
+  const reportsRevenue = cfg.groups.some((g) => ["Headline", "Amazon", "Shopify"].includes(g));
+  const revenueNote = reportsRevenue ? `
     <div class="insight">
       <div class="ico">i</div>
       <div class="body">
@@ -560,7 +573,10 @@ function paint() {
         so treat it as an upper bound. No blended ROAS is shown: Meta and Google can't observe Amazon
         purchases, so only <strong>TACOS</strong> is meaningful across channels.
       </div>
-    </div>
+    </div>` : "";
+
+  body.innerHTML = `
+    ${revenueNote}
     <div class="w-grid">${cards || `<div class="empty">No widgets. Click <strong>Edit dashboard</strong> to add some.</div>`}</div>
   `;
 

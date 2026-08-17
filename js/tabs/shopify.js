@@ -11,12 +11,14 @@ export const mountShopify = makeDashboard({
   prefix: "shp",
   title: "Shopify",
   subtitle: "Storefront orders, net of refunds.",
-  groups: ["Shopify", "SEO", "Operations"],
+  // SEO moved to its own tab. Traffic acquisition and storefront revenue
+  // are different questions, and the SEO widgets were the ones being
+  // scrolled past here. Overview still sees both.
+  groups: ["Shopify", "Operations"],
   platform: null,
   defaultLayout: [
-    "shop-net", "shop-orders", "shop-refunds", "seo-organic",
+    "shop-net", "shop-orders", "shop-refunds",
     "shop-by-product-chart", "shop-top-products",
-    "seo-trend", "seo-by-source",
     "shop-by-day",
     "sync-status",
   ],

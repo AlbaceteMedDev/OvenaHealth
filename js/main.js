@@ -8,17 +8,19 @@ import { clearCache } from "./data/live.js";
 import { mountOverview } from "./tabs/overview.js";
 import { mountAmazon } from "./tabs/amazon.js";
 import { mountShopify } from "./tabs/shopify.js";
+import { mountSeo } from "./tabs/seo.js";
 import { mountMeta } from "./tabs/meta.js";
 import { mountGoogle } from "./tabs/google.js";
 import { mountInventory } from "./tabs/inventory.js";
 import { mountScan } from "./tabs/scan.js";
 import { mountMargins } from "./tabs/margins.js";
 
-const tabs = ["overview", "amazon", "shopify", "meta", "google", "inventory", "scan", "margins"];
+const tabs = ["overview", "amazon", "shopify", "seo", "meta", "google", "inventory", "scan", "margins"];
 const mounts = {
   overview: mountOverview,
   amazon: mountAmazon,
   shopify: mountShopify,
+  seo: mountSeo,
   meta: mountMeta,
   google: mountGoogle,
   inventory: mountInventory,
