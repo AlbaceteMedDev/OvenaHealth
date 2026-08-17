@@ -17,7 +17,7 @@ import {
   FACEBOOK_ADS_FIELDS,
   GOOGLE_ADS_FIELDS,
 } from "../_lib/catchr.mjs";
-import { upsert, startRun, finishRun, loadSkuAliases } from "../_lib/db.mjs";
+import { upsert, replaceAll, clearTable, startRun, finishRun, loadSkuAliases } from "../_lib/db.mjs";
 import { SELLER_ACCOUNTS, AD_PLATFORMS, MERCHANT_CENTER_ACCOUNTS } from "../_lib/accounts.mjs";
 import { skuAliases as staticAliases, skuMap, asinMap } from "../../js/data/inventory.js";
 import { DATA_START } from "../../js/config.js";
@@ -256,11 +256,24 @@ async function syncAds(range, resolve) {
 
 // ─── Google Merchant Center: feed health ─────────────────────────────
 // Not a time series — a current snapshot of what can and can't serve.
+//
+// These rows are REPLACED, not upserted. Upserting can only ever add or
+// update, so a problem that Google has since cleared stays on the dashboard
+// forever: the account carried "Account suspended due to policy violation:
+// Misrepresentation" and six disapproved products for five days after both
+// were actually resolved, because nothing ever deleted them.
+//
+// An empty issues list is the specific case that matters here — it is the
+// signal that the account is clean, not a failed fetch — so it cannot be
+// treated as "no news" the way replaceAll treats an empty product list.
+// `issuesFetched` records that the request itself succeeded, which is what
+// makes an empty result trustworthy enough to clear the table on.
 async function syncMerchantCenter(range) {
   const issueRows = [];
   const productRows = [];
   const notes = [];
   const stamp = new Date().toISOString();
+  let issuesFetched = false;
 
   for (const account of MERCHANT_CENTER_ACCOUNTS) {
     const acct = [{ id: account.id, authorization_id: account.authorization_id }];
@@ -275,8 +288,12 @@ async function syncMerchantCenter(range) {
           "AccountStatusAccountLevelIssue.documentation",
         ],
       });
+      issuesFetched = true;
       for (const r of issues) {
-        const title = r["AccountStatusAccountLevelIssue.title"];
+        // Catchr returns a single empty row rather than an empty array when
+        // an account has no issues, so a bare `issues.length` reads as one
+        // issue. The title guard below is what actually distinguishes them.
+        const title = r?.["AccountStatusAccountLevelIssue.title"];
         if (!title) continue;
         issueRows.push({
           account_id: account.id,
@@ -301,7 +318,7 @@ async function syncMerchantCenter(range) {
         ],
       });
       for (const r of products) {
-        const title = r["product_view.title"];
+        const title = r?.["product_view.title"];
         if (!title) continue;
         productRows.push({
           account_id: account.id,
@@ -316,7 +333,7 @@ async function syncMerchantCenter(range) {
     }
   }
 
-  return { issueRows, productRows, notes };
+  return { issueRows, productRows, notes, issuesFetched, stamp };
 }
 
 export default async function handler(req, res) {
@@ -359,8 +376,14 @@ export default async function handler(req, res) {
       }
       written += await upsert("ads_daily", ads.campaignRows, "date,platform,account_id,campaign_id");
       written += await upsert("ads_sku_daily", ads.skuRows, "date,platform,account_id,amazon_sku");
-      written += await upsert("gmc_account_issues", gmc.issueRows, "account_id,title");
-      written += await upsert("gmc_product_status", gmc.productRows, "account_id,product_title");
+      // Snapshots, so cleared problems disappear instead of lingering.
+      if (gmc.issuesFetched && !gmc.issueRows.length) {
+        await clearTable("gmc_account_issues");
+        notes.push("merchant-center: no account issues — cleared");
+      } else {
+        written += await replaceAll("gmc_account_issues", gmc.issueRows, "account_id,title", gmc.stamp);
+      }
+      written += await replaceAll("gmc_product_status", gmc.productRows, "account_id,product_title", gmc.stamp);
     }
 
     const summary = {

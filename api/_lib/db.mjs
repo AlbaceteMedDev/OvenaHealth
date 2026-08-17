@@ -105,6 +105,22 @@ export async function replaceAll(table, rows, onConflict, stamp) {
   return written;
 }
 
+// Empty a snapshot table. Only for the case where an empty upstream result
+// is itself the news — Merchant Center reporting no account issues means the
+// account is clean, and leaving the last known issue on screen would say the
+// opposite. Callers must have confirmed the fetch SUCCEEDED before calling
+// this; an empty response from a failed request means nothing.
+export async function clearTable(table) {
+  assertConfigured();
+  // PostgREST refuses an unfiltered DELETE, so match every row explicitly.
+  const url = `${URL_BASE}/rest/v1/${table}?synced_at=not.is.null`;
+  const res = await fetch(url, { method: "DELETE", headers: headers({ prefer: "return=minimal" }) });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text();
+    throw new DbError(`clear ${table} failed (${res.status}): ${body.slice(0, 200)}`, { status: res.status });
+  }
+}
+
 // ─── sync_runs bookkeeping ───────────────────────────────────────────
 export async function startRun(job) {
   assertConfigured();
