@@ -16,6 +16,10 @@
     {
       "path": "/api/sync/fba",
       "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/sync/seo?days=30",
+      "schedule": "45 */6 * * *"
     }
   ],
   "functions": {

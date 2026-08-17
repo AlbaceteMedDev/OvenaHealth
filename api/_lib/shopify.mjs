@@ -352,3 +352,39 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
     })),
   };
 }
+
+
+// ─── Storefront traffic by acquisition source ────────────────────────
+//
+// Shopify exposes its own analytics through ShopifyQL, which needs
+// read_analytics. The GraphQL shape is easy to get wrong and the errors are
+// unhelpful, so for the record: shopifyqlQuery returns ShopifyqlQueryResponse
+// — a plain object, not a union, so no `... on TableResponse` fragment.
+// `parseErrors` is a String scalar and takes no selections. `tableData.rows`
+// is JSON keyed by column name, NOT the `rowData` array the docs suggest.
+//
+// "search" is the organic number. Shopify reports it as one bucket with no
+// engine or keyword breakdown — that only exists in Search Console.
+export async function sessionsBySource(days = 30) {
+  const q = `FROM sessions SHOW sessions GROUP BY day, referrer_source ` +
+            `SINCE -${Math.max(1, Math.min(365, days))}d UNTIL today ORDER BY day ASC`;
+  const data = await graphql(
+    `query($q: String!) {
+       shopifyqlQuery(query: $q) {
+         parseErrors
+         tableData { rows columns { name dataType } }
+       }
+     }`,
+    { q },
+  );
+  const res = data?.shopifyqlQuery;
+  const errs = res?.parseErrors;
+  if (Array.isArray(errs) ? errs.length : errs) {
+    throw new ShopifyError(`ShopifyQL parse error: ${JSON.stringify(errs).slice(0, 200)}`);
+  }
+  return (res?.tableData?.rows || []).map((r) => ({
+    date: String(r.day).slice(0, 10),
+    referrer_source: r.referrer_source || "unknown",
+    sessions: Number(r.sessions) || 0,
+  })).filter((r) => r.date && r.date !== "null");
+}
