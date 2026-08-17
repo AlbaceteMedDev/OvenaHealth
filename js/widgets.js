@@ -134,7 +134,8 @@ export const WIDGETS = [
           settled orders, not a published fee schedule — nearly every order here is merchant-fulfilled,
           so it pays referral only and no FBA fulfilment. Outbound postage is a flat per-parcel estimate,
           charged once per shipment rather than per unit, until real Stamps.com figures are loaded. Amazon&rsquo;s own service fees — inbound freight to
-          FBA and the monthly subscription — are period costs, not per-unit, and are not in this table.
+          FBA (&minus;$505.42 net) and the monthly subscription (&minus;$79.98) — are period costs, not
+          per-unit, and are not in this table; they sit in amz_transactions.
         </p>
       `, { flush: false });
     },

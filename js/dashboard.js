@@ -16,7 +16,7 @@
 
 import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
-  fetchSeoSessions, fetchAdsBySku, fetchStoreCosts, fetchTraffic,
+  fetchSeoSessions, fetchAdsBySku, fetchStoreCosts, fetchTraffic, fetchAmzOrders,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
@@ -193,13 +193,14 @@ async function render() {
   const body = panelEl.querySelector(`#${P}Body`);
   body.innerHTML = loadingBox();
 
-  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, traffic, savedLayout] = await Promise.all([
+  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, traffic, amzOrders, savedLayout] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
     fetchSeoSessions(period),
     fetchAdsBySku(period),
     fetchStoreCosts(),
     fetchTraffic(period),
+    fetchAmzOrders(period),
     layout ? Promise.resolve(layout) : loadLayout(),
   ]);
   layout = savedLayout;
@@ -373,7 +374,7 @@ async function render() {
     period, grain, amz, shop, ads: { rows: adRows }, runs, fba, seo, adBySku,
     storeCosts: (storeCostRows?.rows || [])[0] || {},
     shopSales,
-    amzT, shopT, adT, adM, revenue, bySku, byProduct,
+    amzT, shopT, adT, adM, revenue, bySku, byProduct, amzOrders,
     spendByPlatform, campaigns, salesLog, daily,
     available: daysAvailable(),
     exportData: {
@@ -458,12 +459,20 @@ function rebuildInventory() {
   // not two. Amazon averages 1.21 units per order, and billing per unit
   // overstated postage by $96.69 across this window.
   //
-  // Amazon's shipment count is approximated by order LINES, which is the
-  // closest figure amz_sales_daily holds: 119 lines against 103 real orders,
-  // because an order containing two different SKUs is counted twice. Still
-  // closer than units, and exact once amz_orders lands with real order ids.
+  // Amazon's shipment count is now exact: distinct order ids from
+  // amz_orders, excluding anything Amazon fulfils. It was approximated by
+  // order lines, which counted a two-SKU order twice — 118 against 103 real
+  // shipments. fulfillment_channel states who ships rather than inferring it
+  // from a "-FBA" suffix on the seller SKU.
+  //
+  // Falls back to the old line-count approximation when amz_orders is empty,
+  // so the P&L still reports something if the order import has not run.
   const shopShipments = ctx.shopT.orders || 0;
-  const amzShipments = (ctx.amz?.rows || []).reduce(
+  const fbmOrders = new Set();
+  for (const r of ctx.amzOrders?.rows || []) {
+    if ((r.quantity || 0) > 0 && r.fulfillment_channel !== "Amazon") fbmOrders.add(r.amazon_order_id);
+  }
+  const amzShipments = fbmOrders.size || (ctx.amz?.rows || []).reduce(
     (n, r) => n + (/-FBA$/i.test(r.amazon_sku || "") ? 0 : (r.order_items || 0)),
     0,
   );

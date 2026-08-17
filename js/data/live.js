@@ -102,6 +102,25 @@ export function fetchTraffic(days) {
   );
 }
 
+// ─── Amazon orders, item level ───────────────────────────────────────
+// Ground truth from Amazon's own All Orders report. One row per order ITEM,
+// so an order with two SKUs is two rows sharing an amazon_order_id — which
+// is what makes a shipment count (distinct order ids) different from a unit
+// count (sum of quantity), and different again from order lines.
+//
+// Empty rather than throwing when the table is missing.
+export function fetchAmzOrders(days) {
+  return cached("amzOrders", { days }, () =>
+    run(
+      supabase
+        .from("amz_orders")
+        .select("amazon_order_id, purchase_day, sku, quantity, item_price, fulfillment_channel, order_status, ship_state")
+        .gte("purchase_day", startDateFor(days))
+        .order("purchase_day", { ascending: true }),
+    ),
+  );
+}
+
 // ─── Ads, per campaign ───────────────────────────────────────────────
 export function fetchAds(days) {
   return cached("ads", { days }, () =>
