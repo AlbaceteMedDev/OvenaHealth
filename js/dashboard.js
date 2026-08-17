@@ -16,7 +16,7 @@
 
 import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
-  fetchSeoSessions, fetchAdsBySku, fetchStoreCosts,
+  fetchSeoSessions, fetchAdsBySku, fetchStoreCosts, fetchTraffic,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
@@ -193,12 +193,13 @@ async function render() {
   const body = panelEl.querySelector(`#${P}Body`);
   body.innerHTML = loadingBox();
 
-  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, savedLayout] = await Promise.all([
+  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, traffic, savedLayout] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
     fetchSeoSessions(period),
     fetchAdsBySku(period),
     fetchStoreCosts(),
+    fetchTraffic(period),
     layout ? Promise.resolve(layout) : loadLayout(),
   ]);
   layout = savedLayout;
@@ -216,7 +217,7 @@ async function render() {
     return;
   }
 
-  const amzT = salesTotals(amz.rows);
+  const amzT = salesTotals(amz.rows, traffic.rows);
   const shopT = shopTotals(shop.rows);
   // A scoped dashboard must not report account-wide advertising: Meta's ACOS
   // is not Amazon's. Everything downstream reads adRows, never ads.rows.
@@ -317,15 +318,12 @@ async function render() {
     }
   };
   fold(amz.rows, (r) => ({ amazon: Number(r.ordered_sales) || 0, units: r.units_ordered || 0 }), ["amazon", "units"]);
-  // Sessions are reported per ASIN and repeated on every SKU row for that
-  // listing, so they are deduped per (bucket, ASIN) rather than summed.
-  fold(
-    bucketSeries(amz.rows, grain, (r) => ({ sessions: r.sessions || 0, pageViews: r.page_views || 0 }),
-      { dedupe: (r) => r.asin || r.amazon_sku }),
-    (b) => ({ sessions: b.sessions || 0, pageViews: b.pageViews || 0 }),
-    ["sessions", "pageViews"],
-    true,
-  );
+  // Traffic comes from its own per-day table. It used to be summed off the
+  // per-SKU sales rows, deduped by ASIN — but those rows carried single-day
+  // Catchr figures that overstated sessions by about half, and per-SKU-daily
+  // traffic is not obtainable from any source anyway. See migration 0018.
+  fold(traffic.rows, (r) => ({ sessions: r.sessions || 0, pageViews: r.page_views || 0 }),
+       ["sessions", "pageViews"]);
   fold(shop.rows, (r) => ({ shopify: Number(r.net_sales) || 0 }), ["shopify"]);
   fold(adRows, (r) => ({ spend: Number(r.cost) || 0 }), ["spend"]);
   const daily = [...merged.values()].sort((a, b) => (a.key < b.key ? -1 : 1)).map((d) => {

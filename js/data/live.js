@@ -81,6 +81,27 @@ export function fetchSales(days) {
   );
 }
 
+// ─── Amazon traffic, per day ─────────────────────────────────────────
+// Separate from fetchSales because sessions cannot be attributed to a SKU
+// on a given day. Amazon's Sales & Traffic report is accurate per day and
+// accurate per SKU over a window, but the cross of the two is not available
+// from any source — see migration 0018. Summing the per-SKU sessions column
+// used to stand in for this and overstated traffic by about half.
+//
+// Returns empty rather than throwing when the table is missing, so a deploy
+// that lands before the migration shows an empty chart instead of an error.
+export function fetchTraffic(days) {
+  return cached("traffic", { days }, () =>
+    run(
+      supabase
+        .from("amz_traffic_daily")
+        .select("date, marketplace_id, sessions, page_views, units_ordered, ordered_sales")
+        .gte("date", startDateFor(days))
+        .order("date", { ascending: true }),
+    ),
+  );
+}
+
 // ─── Ads, per campaign ───────────────────────────────────────────────
 export function fetchAds(days) {
   return cached("ads", { days }, () =>
@@ -292,25 +313,26 @@ export function salesBySku(rows) {
   return [...bySku.values()];
 }
 
-// Same dedupe rule as above, for store-wide totals.
-export function salesTotals(rows) {
-  const seenTraffic = new Set();
-  return rows.reduce(
+// Store-wide totals. Sales come from the per-SKU rows; traffic comes from
+// `trafficRows` (amz_traffic_daily), because per-SKU sessions are not a real
+// figure — see fetchTraffic. Passing no traffic rows yields zero sessions,
+// which is what a deploy landing before migration 0018 shows.
+export function salesTotals(rows, trafficRows = []) {
+  const t = rows.reduce(
     (acc, r) => {
       acc.revenue += Number(r.ordered_sales) || 0;
       acc.units += r.units_ordered || 0;
       acc.orderItems += r.order_items || 0;
       acc.refunds += r.units_refunded || 0;
-      const key = `${r.date}|${r.asin || r.amazon_sku}`;
-      if (!seenTraffic.has(key)) {
-        seenTraffic.add(key);
-        acc.sessions += r.sessions || 0;
-        acc.pageViews += r.page_views || 0;
-      }
       return acc;
     },
     { revenue: 0, units: 0, orderItems: 0, refunds: 0, sessions: 0, pageViews: 0 },
   );
+  for (const r of trafficRows) {
+    t.sessions += r.sessions || 0;
+    t.pageViews += r.page_views || 0;
+  }
+  return t;
 }
 
 // ─── Shopify shaping ─────────────────────────────────────────────────
