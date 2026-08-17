@@ -88,7 +88,7 @@ export const WIDGETS = [
       const line = (label, value, { kind = "cost", note = "", strong = false, hintKey = null } = {}) => `
         <tr class="pl-${kind}${strong ? " pl-strong" : ""}">
           <td>${label}${hintKey ? hint(hintKey) : ""}</td>
-          <td class="num">${kind === "cost" ? "−" : ""}${fmtCurrency(Math.abs(value))}</td>
+          <td class="num">${kind === "cost" || value < 0 ? "−" : ""}${fmtCurrency(Math.abs(value))}</td>
           <td class="num muted">${pct(value)}</td>
           <td class="muted">${escapeHtml(note)}</td>
         </tr>`;
@@ -108,7 +108,7 @@ export const WIDGETS = [
               ${line("FBA storage", p.storage, { note: "monthly charge, prorated over the window", hintKey: "FBA" })}
               ${line("Contribution margin", p.contribution, { kind: "in", strong: true, hintKey: "CONTRIBUTION MARGIN" })}
               ${line("Advertising", p.adSpend, { note: c.spendByPlatform.map((x) => x.label).join(", ") || "no spend" })}
-              ${line("Net profit", p.net, { kind: p.net < 0 ? "neg" : "in", strong: true })}
+              ${line(p.net < 0 ? "Net loss" : "Net profit", p.net, { kind: p.net < 0 ? "neg" : "in", strong: true })}
             </tbody>
           </table>
         </div>
