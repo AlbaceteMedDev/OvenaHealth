@@ -21,6 +21,8 @@ import {
 } from "../ui.js";
 
 // Creates a mount function for one platform.
+let wiredResize = false;
+
 export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBlocks = null }) {
   let panelEl = null;
   let period = "all";
@@ -217,7 +219,12 @@ export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBl
     wireGrain(el, () => grain, (v) => { grain = v; }, render);
     wireExport(el, `chanExport-${platform}`, () => lastRender?.exportData);
     render();
-    window.addEventListener("resize", debounce(() => redraw(), 150));
+    // Guarded: auto-refresh re-mounts the tab, and an unguarded
+    // registration would stack a new listener on every refresh.
+    if (!wiredResize) {
+      wiredResize = true;
+      window.addEventListener("resize", debounce(() => redraw(), 150));
+    }
   };
 }
 

@@ -25,6 +25,7 @@ import {
 } from "../ui.js";
 
 let panelEl = null;
+let wiredResize = false;
 let period = "all";
 let grain = "day";
 let lastRender = null;
@@ -56,7 +57,12 @@ export function mountShopify(el) {
   wireGrain(el, () => grain, (v) => { grain = v; }, render);
   wireExport(el, "shopExport", () => lastRender?.exportData);
   render();
-  window.addEventListener("resize", debounce(() => redraw(), 150));
+  // Guarded: auto-refresh re-mounts the tab, and an unguarded
+    // registration would stack a new listener on every refresh.
+    if (!wiredResize) {
+      wiredResize = true;
+      window.addEventListener("resize", debounce(() => redraw(), 150));
+    }
 }
 
 async function render() {

@@ -110,6 +110,7 @@ export function renderLine(svg, series, opts = {}) {
 
   const width = svg.clientWidth || svg.parentElement?.clientWidth || 600;
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.height = `${height}px`;
   svg.setAttribute("preserveAspectRatio", "none");
   svg.replaceChildren();
   if (!series.length) return;
@@ -180,6 +181,7 @@ export function renderBars(svg, series, opts = {}) {
 
   const width = svg.clientWidth || svg.parentElement?.clientWidth || 600;
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.height = `${height}px`;
   svg.setAttribute("preserveAspectRatio", "none");
   svg.replaceChildren();
   if (!series.length) return;
@@ -243,6 +245,7 @@ export function renderSpark(svg, values, accent = true) {
   const width = svg.clientWidth || svg.parentElement?.clientWidth || 200;
   const height = 56;
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.height = `${height}px`;
   svg.setAttribute("preserveAspectRatio", "none");
   svg.replaceChildren();
   if (!values.length) return;
@@ -276,6 +279,7 @@ export function renderStackedBars(svg, daily, opts = {}) {
 
   const width = svg.clientWidth || svg.parentElement?.clientWidth || 600;
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.height = `${height}px`;
   svg.replaceChildren();
   if (!daily.length) return;
 
@@ -315,6 +319,7 @@ export function renderDualLine(svg, series, opts = {}) {
   } = opts;
   const width = svg.clientWidth || svg.parentElement?.clientWidth || 600;
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.height = `${height}px`;
   svg.replaceChildren();
   if (!series.length) return;
 

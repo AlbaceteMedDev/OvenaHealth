@@ -4,6 +4,7 @@ import { fmtTime, fmtDate, fmtTzAbbrev, getTimeZone } from "./format.js";
 import { subscribe, getState, loadInitial, onError, resetCache } from "./state.js";
 import * as auth from "./auth.js";
 import { initTheme } from "./theme.js";
+import { clearCache } from "./data/live.js";
 import { mountOverview } from "./tabs/overview.js";
 import { mountAmazon } from "./tabs/amazon.js";
 import { mountShopify } from "./tabs/shopify.js";
@@ -120,6 +121,8 @@ loginForm?.addEventListener("submit", async (e) => {
 });
 
 // ─── Tab routing ────────────────────────────────────────────────────
+let currentTab = null;
+
 function selectTab(name) {
   if (legacyTabs[name]) name = legacyTabs[name];
   if (!tabs.includes(name)) name = "overview";
@@ -134,6 +137,7 @@ function selectTab(name) {
     mounts[name](document.getElementById(`panel-${name}`));
     mounted.add(name);
   }
+  currentTab = name;
   const desired = `#${name}`;
   if (location.hash !== desired) history.replaceState(null, "", desired);
   document.querySelector(".main")?.scrollTo?.({ top: 0 });
@@ -196,3 +200,51 @@ onError((msg) => {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toast.hidden = true; }, 5000);
 });
+
+// ─── Auto refresh ────────────────────────────────────────────────────
+// The portal rebuilds itself every 30 minutes so a dashboard left open on a
+// screen is never quietly stale. Two rules keep it honest:
+//
+//   1. Only while the tab is visible. Refreshing a background tab burns
+//      Supabase reads for a screen nobody is looking at.
+//   2. A refresh missed while hidden runs the moment the tab is looked at
+//      again, so coming back to it never shows old numbers.
+//
+// It re-mounts the active tab rather than reloading the page, so scroll
+// position and the tab you were on survive. Each tab's resize listener is
+// guarded against re-registering for exactly this reason.
+const REFRESH_MS = 30 * 60 * 1000;
+let lastRefresh = Date.now();
+let missedWhileHidden = false;
+
+function stampRefresh() {
+  const el = document.getElementById("refreshNote");
+  if (!el) return;
+  const t = new Date(lastRefresh).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  el.textContent = `Auto-refresh · ${t}`;
+  el.title = "Rebuilds every 30 minutes while this tab is visible";
+}
+
+function refreshNow() {
+  if (!currentTab || !mounts[currentTab]) return;
+  clearCache();
+  mounted.delete(currentTab);
+  mounts[currentTab](document.getElementById(`panel-${currentTab}`));
+  mounted.add(currentTab);
+  lastRefresh = Date.now();
+  missedWhileHidden = false;
+  stampRefresh();
+  console.info("[refresh]", currentTab);
+}
+
+setInterval(() => {
+  if (document.visibilityState === "visible") refreshNow();
+  else missedWhileHidden = true;
+}, REFRESH_MS);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (missedWhileHidden || Date.now() - lastRefresh >= REFRESH_MS) refreshNow();
+});
+
+stampRefresh();

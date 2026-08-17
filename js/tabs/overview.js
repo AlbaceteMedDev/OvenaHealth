@@ -32,6 +32,7 @@ import {
 import { WIDGETS, WIDGET_MAP, GROUPS, DEFAULT_LAYOUT } from "../widgets.js";
 
 let panelEl = null;
+let wiredResize = false;
 let period = "all";
 let grain = "day";
 let layout = null;          // array of widget ids; null until loaded
@@ -141,7 +142,12 @@ export function mountOverview(el) {
   subscribe(debounce(() => { if (panelEl && ctx) { rebuildInventory(); paint(); } }, 200));
 
   render();
-  window.addEventListener("resize", debounce(() => drawAll(), 150));
+  // Guarded: auto-refresh re-mounts the tab, and an unguarded
+    // registration would stack a new listener on every refresh.
+    if (!wiredResize) {
+      wiredResize = true;
+      window.addEventListener("resize", debounce(() => drawAll(), 150));
+    }
 }
 
 // ─── Data ────────────────────────────────────────────────────────────
