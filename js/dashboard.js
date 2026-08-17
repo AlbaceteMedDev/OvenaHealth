@@ -33,6 +33,8 @@ import {
 } from "./ui.js";
 import { WIDGETS, WIDGET_MAP } from "./widgets.js";
 
+const COLS = 12;
+
 // Column spans offered in edit mode, out of a 12-column grid.
 export const SPANS = [
   { w: 3, label: "¼" },
@@ -59,6 +61,8 @@ const selected = new Set();   // widget ids ticked in the picker, pre-add
 
 const LAYOUT_ID = cfg.layoutId;
 
+const COLS = 12;
+
 // Column spans offered in edit mode, out of a 12-column grid.
 
 
@@ -80,6 +84,25 @@ const defaultSpan = (id) => {
 // are upgraded on read rather than discarded — a saved dashboard should
 // survive the feature that added resizing.
 
+// Layout items are { id, w, x, y }: a column span plus an explicit cell on a
+// 12-column grid. x/y are what let a widget sit anywhere — including with a
+// gap beside it — rather than being packed against its neighbour.
+//
+// Items saved before placement existed have no x/y. Rather than discard them,
+// autoFlow lays them out exactly the way the packing grid used to, so an
+// existing dashboard opens looking identical and only moves when dragged.
+function autoFlow(items) {
+  let x = 0, y = 0;
+  for (const it of items) {
+    if (Number.isInteger(it.x) && Number.isInteger(it.y)) continue;
+    if (x + it.w > COLS) { x = 0; y += 1; }
+    it.x = x; it.y = y;
+    x += it.w;
+    if (x >= COLS) { x = 0; y += 1; }
+  }
+  return items;
+}
+
 function normalize(saved) {
   if (!Array.isArray(saved)) return null;
   const out = [];
@@ -88,12 +111,16 @@ function normalize(saved) {
     if (!WIDGET_MAP.has(id)) continue;          // widget removed from the catalogue
     const raw = typeof entry === "object" ? Number(entry.w) : NaN;
     const w = allowedSpans(id).includes(raw) ? raw : defaultSpan(id);
-    out.push({ id, w });
+    const xr = Number(entry?.x), yr = Number(entry?.y);
+    const x = Number.isInteger(xr) ? Math.max(0, Math.min(COLS - w, xr)) : null;
+    const y = Number.isInteger(yr) && yr >= 0 ? yr : null;
+    out.push({ id, w, x, y });
   }
-  return out.length ? out : null;
+  return out.length ? autoFlow(out) : null;
 }
 
-const defaultLayout = () => cfg.defaultLayout.map((id) => ({ id, w: defaultSpan(id) }));
+const defaultLayout = () =>
+  autoFlow(cfg.defaultLayout.map((id) => ({ id, w: defaultSpan(id), x: null, y: null })));
 
 async function loadLayout() {
   const { data, error } = await supabase
@@ -455,9 +482,11 @@ function paint() {
         “${escapeHtml(w.title)}” failed to render: ${escapeHtml(err.message)}</div></div></div>`;
     }
     return `
-      <div class="w${editing ? " is-editing" : ""}" style="--span:${item.w}"
+      <div class="w${editing ? " is-editing" : ""}"
+           style="--span:${item.w}; --col:${(item.x ?? 0) + 1}; --row:${(item.y ?? 0) + 1}"
            ${editing ? 'draggable="true"' : ""}
-           data-span="${item.w}" data-widget="${escapeHtml(item.id)}" data-i="${i}">
+           data-span="${item.w}" data-x="${item.x ?? 0}" data-y="${item.y ?? 0}"
+           data-widget="${escapeHtml(item.id)}" data-i="${i}">
         ${editing ? `
           <div class="w-tools">
             <button type="button" class="w-btn w-grip" data-i="${i}"
@@ -621,33 +650,94 @@ function wireDragDrop(root) {
     });
 
     el.addEventListener("dragover", (e) => {
-      if (dragFrom === null || Number(el.dataset.i) === dragFrom) return;
+      if (dragFrom === null) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
-      const r = el.getBoundingClientRect();
-      const after = e.clientX - r.left > r.width / 2;
-      clearDropMarks(root);
-      el.classList.add(after ? "drop-after" : "drop-before");
-    });
-
-    el.addEventListener("drop", (e) => {
-      e.preventDefault();
-      if (dragFrom === null) return;
-      const over = Number(el.dataset.i);
-      const r = el.getBoundingClientRect();
-      const after = e.clientX - r.left > r.width / 2;
-
-      let to = after ? over + 1 : over;
-      const [moved] = layout.splice(dragFrom, 1);
-      if (dragFrom < to) to -= 1;                 // removing shifts everything after it left
-      layout.splice(Math.max(0, Math.min(to, layout.length)), 0, moved);
-
-      dragFrom = null; dragAllowed = false;
-      clearDropMarks(root);
-      void saveLayout();
-      paint();
     });
   });
+
+  // The grid itself takes the drop, not just the widgets, so a widget can be
+  // dropped into empty space and simply stay there. That is what allows gaps:
+  // nothing reflows to close them.
+  root.addEventListener("dragover", (e) => {
+    if (dragFrom === null) return;
+    e.preventDefault();
+    const cell = cellFromPoint(root, e.clientX, e.clientY);
+    if (cell) showGhost(root, cell, layout[dragFrom].w);
+  });
+  root.addEventListener("dragleave", (e) => {
+    if (!root.contains(e.relatedTarget)) clearGhost(root);
+  });
+  root.addEventListener("drop", (e) => {
+    if (dragFrom === null) return;
+    e.preventDefault();
+    clearGhost(root);
+    const cell = cellFromPoint(root, e.clientX, e.clientY);
+    if (!cell) { dragFrom = null; dragAllowed = false; return; }
+
+    const moving = layout[dragFrom];
+    const from = { x: moving.x, y: moving.y };
+    const x = Math.max(0, Math.min(COLS - moving.w, cell.col));
+    const y = Math.max(0, cell.row);
+
+    // Anything whose footprint the drop lands on trades places with the
+    // widget being moved, rather than the drop being refused. One occupant
+    // swaps; several are pushed down a row, because there is no sensible
+    // single partner to swap with.
+    const hit = layout.filter((it, i) =>
+      i !== dragFrom && it.y === y && x < it.x + it.w && it.x < x + moving.w);
+
+    moving.x = x;
+    moving.y = y;
+    if (hit.length === 1) {
+      hit[0].x = Math.max(0, Math.min(COLS - hit[0].w, from.x ?? 0));
+      hit[0].y = from.y ?? 0;
+    } else {
+      for (const it of hit) it.y += 1;
+    }
+
+    dragFrom = null;
+    dragAllowed = false;
+    void saveLayout();
+    paint();
+  });
+}
+
+// Which grid cell a pointer is over. Columns divide evenly; rows do not,
+// because each sizes to its tallest widget — so row boundaries are read back
+// from the resolved template rather than assumed.
+function cellFromPoint(grid, clientX, clientY) {
+  const r = grid.getBoundingClientRect();
+  const cs = getComputedStyle(grid);
+  const gap = parseFloat(cs.columnGap) || 0;
+  const colW = (r.width - gap * (COLS - 1)) / COLS;
+  const col = Math.max(0, Math.min(COLS - 1, Math.floor((clientX - r.left) / (colW + gap))));
+
+  const rowGap = parseFloat(cs.rowGap) || 0;
+  const rows = cs.gridTemplateRows.split(" ").map(parseFloat).filter((n) => !Number.isNaN(n));
+  let y = r.top, row = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (clientY < y + rows[i] + rowGap / 2) { row = i; break; }
+    y += rows[i] + rowGap;
+    row = i + 1;
+  }
+  return { col, row };
+}
+
+function showGhost(grid, cell, w) {
+  let g = grid.querySelector(".w-ghost");
+  if (!g) {
+    g = document.createElement("div");
+    g.className = "w-ghost";
+    grid.appendChild(g);
+  }
+  g.style.setProperty("--col", Math.max(0, Math.min(COLS - w, cell.col)) + 1);
+  g.style.setProperty("--row", cell.row + 1);
+  g.style.setProperty("--span", w);
+}
+
+function clearGhost(grid) {
+  grid.querySelector(".w-ghost")?.remove();
 }
 
 function drawAll() {

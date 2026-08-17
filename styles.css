@@ -1646,22 +1646,42 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
 .w-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: minmax(48px, min-content);
   gap: 14px;
   align-items: start;
+}
+/* A row nobody occupies still needs height, or a deliberate vertical gap
+   would collapse to nothing and the widget below would jump up. */
+
+.w-ghost {
+  grid-column: var(--col) / span var(--span);
+  grid-row: var(--row);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  min-height: 48px;
+  pointer-events: none;
 }
 .w {
   position: relative;
   min-width: 0;
-  grid-column: span var(--span, 6);
+  /* Explicit cell, so a widget stays where it was put — including with empty
+     space beside it. Auto-placement would close every gap. */
+  grid-column: var(--col, auto) / span var(--span, 6);
+  grid-row: var(--row, auto);
 }
 /* Below these widths a 12-column grid stops being readable, so spans
    collapse regardless of what the saved layout asked for. Anything already
    set to full width stays full. */
+/* Below these widths there is not enough room for a 12-column canvas, so
+   placement is abandoned and widgets flow in saved order. The x/y values are
+   kept, not discarded — widening the window restores the arrangement. */
 @media (max-width: 1180px) {
-  .w { grid-column: span 6; }
+  .w { grid-column: span 6; grid-row: auto; }
   .w[data-span="12"], .w[data-span="8"] { grid-column: span 12; }
+  .w-ghost { display: none; }
 }
-@media (max-width: 780px) { .w { grid-column: span 12; } }
+@media (max-width: 780px) { .w { grid-column: span 12; grid-row: auto; } }
 
 /* The grid supplies spacing, so cards inside must not add their own. */
 .w > .card, .w > .kpi { margin-bottom: 0; height: 100%; }
