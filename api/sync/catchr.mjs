@@ -17,7 +17,7 @@ import {
   FACEBOOK_ADS_FIELDS,
   GOOGLE_ADS_FIELDS,
 } from "../_lib/catchr.mjs";
-import { upsert, startRun, finishRun, loadSkuAliases } from "../_lib/db.mjs";
+import { upsert, select, startRun, finishRun, loadSkuAliases } from "../_lib/db.mjs";
 import { SELLER_ACCOUNTS, AD_PLATFORMS, MERCHANT_CENTER_ACCOUNTS } from "../_lib/accounts.mjs";
 import { skuAliases as staticAliases, skuMap, asinMap } from "../../js/data/inventory.js";
 import { DATA_START } from "../../js/config.js";
@@ -78,15 +78,54 @@ function eachDay(startIso, endIso) {
 //
 // So the only way to get true daily per-SKU rows is one request per day,
 // with the date supplied by us rather than returned by the report.
-async function syncSeller(range, resolve) {
+// Resumable by design. Amazon sales must be fetched one day per request
+// (see above) and Catchr allows roughly 3 requests per 3 minutes, so a
+// multi-day window cannot finish inside Vercel's 60-second function limit —
+// it timed out at 504 even asking for 2 days.
+//
+// Rather than a cursor table, the backlog IS the state: days already in
+// amz_sales_daily are skipped, so each run picks up exactly where the last
+// one stopped and the 30-minute cron walks the window forward on its own.
+// Nothing to reset, and a failed run costs one day rather than the batch.
+//
+// DEADLINE_MS leaves headroom under the 60s cap to finish writing and
+// record the run — being killed mid-write is what leaves gaps.
+const DEADLINE_MS = 42_000;
+
+async function syncSeller(range, resolve, startedAt = Date.now()) {
   const rows = [];
   const notes = [];
-  const days = eachDay(range.start_date, range.end_date);
+  const all = eachDay(range.start_date, range.end_date);
+
+  // Ask the database which days it already has, newest first, so the most
+  // recent gaps close before older ones.
+  let have = new Set();
+  try {
+    const existing = await select(
+      "amz_sales_daily",
+      `select=date&date=gte.${range.start_date}&date=lte.${range.end_date}`,
+    );
+    have = new Set((existing || []).map((r) => String(r.date).slice(0, 10)));
+  } catch {
+    // If the lookup fails, fall through and attempt every day — a slower
+    // run is better than skipping the sync entirely.
+  }
+
+  const days = all.filter((d) => !have.has(d)).reverse();
+  if (!days.length) notes.push("amazon-seller: no missing days in window");
+  else notes.push(`amazon-seller: ${days.length} day(s) missing, working newest first`);
 
   for (const account of SELLER_ACCOUNTS) {
     let unresolved = 0;
 
     for (const date of days) {
+      if (Date.now() - startedAt > DEADLINE_MS) {
+        notes.push(
+          `amazon-seller: stopped at ${date} to stay inside the function limit — ` +
+          `the next run resumes here`,
+        );
+        break;
+      }
       let result;
       try {
         result = await query("amazon-seller", {
