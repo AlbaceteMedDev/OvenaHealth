@@ -157,6 +157,41 @@ drop policy if exists "auth read" on public.amz_transactions;
 create policy "auth read" on public.amz_transactions
   for select to authenticated using (true);
 
+-- ─── The other fee schedule ──────────────────────────────────────────
+-- inventory_state.amazon_fee holds ONE rate per SKU, but there are two, and
+-- which applies depends on who ships. Nearly everything sold so far has been
+-- merchant-fulfilled, so amazon_fee now carries the FBM rate — referral only,
+-- confirmed twice over: measured from 102 settlement payments joined to their
+-- orders, and matching Seller Central's own per-unit estimates to the cent
+-- (CWD-PWD $0.60 both ways, HC-ROLL16FT $0.72 vs $0.74, SOCK-AID $0.75 vs
+-- $0.72, HC-ROLL5FT $0.00 vs $0.10).
+--
+-- The FBA rate is 4-9x higher because it buys pick, pack and delivery. Those
+-- are the figures the portal used to apply to every unit, which is where the
+-- $1,110.94 fee estimate came from against $83.26 actually charged.
+--
+-- Stored rather than discarded because FBA stock is inbound: every FBA
+-- listing is at 0 units today except SOCK-AID-FBA, and the moment those sell
+-- the fee per unit jumps to this column. Keeping both makes the switch a
+-- reported change instead of a silent margin collapse.
+alter table public.inventory_state
+  add column if not exists amazon_fee_fba numeric(10,2) not null default 0;
+
+comment on column public.inventory_state.amazon_fee is
+  'Per-unit Amazon fee when MERCHANT-fulfilled: referral only. Measured from settlement.';
+comment on column public.inventory_state.amazon_fee_fba is
+  'Per-unit Amazon fee when FBA-fulfilled: referral plus fulfilment. Seller Central estimate, 2026-08-17.';
+
+update public.inventory_state set amazon_fee_fba = v.fee
+from (values
+  ('CS-KHC-L-BLK', 6.23), ('CS-KHC-M-BLK', 6.23),
+  ('CS-KHC-S-BLK', 6.23), ('CS-KHC-XL-BLK', 6.23),
+  ('CWD-2X2',      4.52), ('CWD-4X4',      7.11),
+  ('CWD-PWD',      5.49), ('SOCK-AID',     5.97),
+  ('HC-ROLL5FT',   3.01), ('HC-ROLL16FT',  4.81)
+) as v(sku, fee)
+where public.inventory_state.sku = v.sku;
+
 -- ─── Mark the dead traffic columns ───────────────────────────────────
 -- Left in place rather than dropped so a stale deploy reading the old shape
 -- shows zero instead of a wrong number that looks plausible.
