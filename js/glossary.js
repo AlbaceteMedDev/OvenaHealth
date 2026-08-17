@@ -117,8 +117,9 @@ export const GLOSSARY = {
     term: "Contribution margin",
     full: "Contribution margin",
     body:
-      "Revenue minus every cost that scales with a unit sold — COGS, shipping and Amazon's fees. " +
-      "What each sale contributes toward fixed costs and advertising before either is paid.",
+      "Profit before ad spend: revenue less COGS, shipping and selling fees. It says whether the " +
+      "products make money, which is a different question from whether the business does — this can " +
+      "be healthy while net profit is negative, and the gap is what you pay to win an order.",
   },
   "ORDER ITEMS": {
     term: "Order items",

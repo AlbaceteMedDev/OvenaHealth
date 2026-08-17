@@ -79,11 +79,12 @@ export const WIDGETS = [
   {
     id: "contribution", title: "Contribution margin", group: "Headline", size: "kpi", spans: [3, 4, 6],
     render: (c, span) => kpiHtml(term("Contribution", "CONTRIBUTION MARGIN"), fmtCurrency(c.pl.contribution),
-      // "52.2% of revenue" told you the ratio but not what the number IS.
-      // Say what it is left after, and what it has not yet paid for.
+      // Plain English beats the textbook term. "Fees" covers Amazon's
+      // referral and Shopify's payment processing — small here, but omitting
+      // them would make this tile disagree with the P&L table below it.
       c.revenue > 0
-        ? `left after product + shipping costs, before ads — ${fmtPercent(c.pl.contribution / c.revenue)} of revenue`
-        : "left after product + shipping costs, before ads"),
+        ? `profit before ad spend — revenue less COGS, shipping and fees (${fmtPercent(c.pl.contribution / c.revenue)})`
+        : "profit before ad spend — revenue less COGS, shipping and fees"),
   },
   {
     id: "pl-breakdown", title: "Profit & loss breakdown", group: "Headline", size: "full", spans: [6, 8, 12],
