@@ -50,11 +50,23 @@ export const MERCHANT_CENTER_ACCOUNTS = envList("CATCHR_MERCHANT_CENTER_ACCOUNTS
   { id: "5787103589", authorization_id: 50771, label: "Ovena Health" },
 ]);
 
-// Google Search Console. Empty until the property is authorised in Catchr
-// (Sources -> Google Search Console); the sync reports that plainly rather
-// than failing. Set CATCHR_SEARCH_CONSOLE_ACCOUNTS once connected:
-//   [{"id":"sc-domain:ovenahealth.com","authorization_id":00000}]
-export const SEARCH_CONSOLE_ACCOUNTS = envList("CATCHR_SEARCH_CONSOLE_ACCOUNTS", []);
+// Google Search Console. Authorised 2026-08-17 as a DOMAIN property
+// (sc-domain:), which covers www, non-www and every subdomain at once.
+//
+// It returns nothing yet, and that is expected rather than broken: Search
+// Console begins collecting when a property is created and does not backfill
+// history, so a property verified today has no past to report. Add the usual
+// 2-3 day reporting lag and the first rows should appear within a few days.
+// Verified 2026-08-17 — zero impressions across a 90-day window even with no
+// dimensions, which is the shape of "no data yet", not "wrong request".
+//
+// The storefront also carries an older google-site-verification meta tag from
+// a different account, so a URL-prefix property may exist elsewhere with real
+// history. If so, connecting THAT account to Catchr would give data
+// immediately instead of waiting.
+export const SEARCH_CONSOLE_ACCOUNTS = envList("CATCHR_SEARCH_CONSOLE_ACCOUNTS", [
+  { id: "sc-domain:ovenahealth.com", authorization_id: 50864, label: "ovenahealth.com" },
+]);
 
 // GA4. Connected 2026-08-12, unused until the SEO tab needed acquisition
 // detail Shopify cannot supply.
