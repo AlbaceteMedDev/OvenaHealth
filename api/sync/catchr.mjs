@@ -17,7 +17,7 @@ import {
   FACEBOOK_ADS_FIELDS,
   GOOGLE_ADS_FIELDS,
 } from "../_lib/catchr.mjs";
-import { upsert, select, startRun, finishRun, loadSkuAliases } from "../_lib/db.mjs";
+import { upsert, startRun, finishRun, loadSkuAliases } from "../_lib/db.mjs";
 import { SELLER_ACCOUNTS, AD_PLATFORMS, MERCHANT_CENTER_ACCOUNTS } from "../_lib/accounts.mjs";
 import { skuAliases as staticAliases, skuMap, asinMap } from "../../js/data/inventory.js";
 import { DATA_START } from "../../js/config.js";
@@ -52,133 +52,70 @@ function makeResolver(dbAliases) {
   };
 }
 
-// Every date in [start, end] inclusive, as YYYY-MM-DD.
-function eachDay(startIso, endIso) {
-  const out = [];
-  const d = new Date(`${startIso}T00:00:00Z`);
-  const end = new Date(`${endIso}T00:00:00Z`);
-  let guard = 0;
-  while (d <= end && guard < 400) {
-    out.push(d.toISOString().slice(0, 10));
-    d.setUTCDate(d.getUTCDate() + 1);
-    guard += 1;
-  }
-  return out;
-}
-
-// ─── Amazon Seller: per-day, per-SKU sales + traffic ─────────────────
+// ─── Amazon Seller: per-day traffic only ─────────────────────────────
 //
-// WHY THIS LOOPS ONE DAY AT A TIME
+// THIS NO LONGER PRODUCES SALES. It used to, one day at a time, and every
+// figure it wrote was wrong — 238 units against Amazon's real 125.
+//
 // Catchr's amazon-seller connector cannot combine the date dimension with a
-// product dimension. Ask for (date, sku) and it silently DROPS the date and
-// returns window totals — no error, just rows with no date on them. An
-// earlier version of this function requested (date, sku, asin, title) and
-// would therefore have written nothing at all: every row failed the
-// `if (!date)` guard below. Verified against the live connector 2026-08-12.
+// product dimension: ask for (date, sku) and it silently DROPS the date and
+// returns window totals. The old workaround was to supply the date ourselves
+// and request a single-day window per day. That looked reasonable and is
+// quietly broken — the connector does not honour a one-day range once a
+// product dimension is present, and returns inflated figures instead of an
+// error. Measured against Amazon's All Orders report on 2026-08-17:
 //
-// So the only way to get true daily per-SKU rows is one request per day,
-// with the date supplied by us rather than returned by the report.
-// Resumable by design. Amazon sales must be fetched one day per request
-// (see above) and Catchr allows roughly 3 requests per 3 minutes, so a
-// multi-day window cannot finish inside Vercel's 60-second function limit —
-// it timed out at 504 even asking for 2 days.
+//   date dimension, full window  -> 125 units, matches Amazon 26/26 days
+//   sku  dimension, full window  -> 120 units, matches Amazon per SKU
+//   sku  dimension, single day   ->  17 units on 8/9 where Amazon says 4
+//   traffic on those same rows   -> 2,073 sessions against a true 1,392
 //
-// Rather than a cursor table, the backlog IS the state: days already in
-// amz_sales_daily are skipped, so each run picks up exactly where the last
-// one stopped and the 30-minute cron walks the window forward on its own.
-// Nothing to reset, and a failed run costs one day rather than the batch.
+// Cumulative differencing was tested as a rescue and also fails: historical
+// windows come back stale, so cum(D) - cum(D-1) collapses to near zero.
+// There is no request shape that yields trustworthy per-SKU DAILY sales.
 //
-// DEADLINE_MS leaves headroom under the 60s cap to finish writing and
-// record the run — being killed mid-write is what leaves gaps.
-const DEADLINE_MS = 270_000;
-
-async function syncSeller(range, resolve, startedAt = Date.now()) {
+// So sales come from Amazon's All Orders report via /api/sync/orders, and
+// this function keeps only what the connector reports accurately: per-day
+// traffic, requested with the date dimension ALONE and no product dimension.
+// One request instead of one per day, which also retires the resumable
+// day-walking machinery and its 270-second deadline.
+async function syncSeller(range) {
   const rows = [];
   const notes = [];
-  const all = eachDay(range.start_date, range.end_date);
-
-  // Ask the database which days it already has, newest first, so the most
-  // recent gaps close before older ones.
-  let have = new Set();
-  try {
-    const existing = await select(
-      "amz_sales_daily",
-      `select=date&date=gte.${range.start_date}&date=lte.${range.end_date}`,
-    );
-    have = new Set((existing || []).map((r) => String(r.date).slice(0, 10)));
-  } catch {
-    // If the lookup fails, fall through and attempt every day — a slower
-    // run is better than skipping the sync entirely.
-  }
-
-  const days = all.filter((d) => !have.has(d)).reverse();
-  if (!days.length) notes.push("amazon-seller: no missing days in window");
-  else notes.push(`amazon-seller: ${days.length} day(s) missing, working newest first`);
 
   for (const account of SELLER_ACCOUNTS) {
-    let unresolved = 0;
-
-    for (const date of days) {
-      if (Date.now() - startedAt > DEADLINE_MS) {
-        notes.push(
-          `amazon-seller: stopped at ${date} to stay inside the function limit — ` +
-          `the next run resumes here`,
-        );
-        break;
-      }
-      let result;
-      try {
-        result = await query("amazon-seller", {
-          accounts: [{ id: account.id, authorization_id: account.authorization_id }],
-          date: "CUSTOM",
-          start_date: date,
-          end_date: date,
-          dimensions: [SELLER_FIELDS.sku, SELLER_FIELDS.asin, SELLER_FIELDS.title],
-          metrics: SELLER_FIELDS.metrics,
-        });
-      } catch (err) {
-        // The connector times out intermittently. Skip the day rather than
-        // failing the whole sync — the next run backfills it.
-        notes.push(`${account.label} ${date}: ${err.message}`);
-        continue;
-      }
-
-      for (const r of result) {
-        const amazonSku = r[SELLER_FIELDS.sku];
-        if (!amazonSku) continue;
-
-        const asin = r[SELLER_FIELDS.asin] || null;
-        const sku = resolve(amazonSku, asin);
-        if (!sku) unresolved += 1;
-
-        rows.push({
-          date,
-          marketplace_id: account.marketplace,
-          amazon_sku: amazonSku,
-          sku,
-          asin,
-          title: r[SELLER_FIELDS.title] || null,
-          ordered_sales: num(r["sales.orderedProductSales.amount"]),
-          units_ordered: num(r["sales.unitsOrdered"]),
-          order_items: num(r["sales.totalOrderItems"]),
-          units_refunded: num(r["sales.unitsRefunded"]),
-          sessions: num(r["traffic.sessions"]),
-          page_views: num(r["traffic.pageViews"]),
-          unit_session_pct: num(r["traffic.unitSessionPercentage"]),
-          buy_box_pct: num(r["traffic.buyBoxPercentage"]),
-          currency: account.currency,
-          synced_at: new Date().toISOString(),
-          });
-      }
-
-      // One request per day adds up; pace them so the connector doesn't
-      // start timing out mid-window.
-      await new Promise((r) => setTimeout(r, 150));
+    let result;
+    try {
+      result = await query("amazon-seller", {
+        accounts: [{ id: account.id, authorization_id: account.authorization_id }],
+        ...range,
+        // No product dimension. Adding one here is what broke this before:
+        // it drops the date and inflates every metric.
+        dimensions: [SELLER_FIELDS.date],
+        metrics: SELLER_FIELDS.metrics,
+      });
+    } catch (err) {
+      notes.push(`${account.label} traffic: ${err.message}`);
+      continue;
     }
 
-    if (unresolved) {
-      notes.push(`${account.label}: ${unresolved} row(s) had a seller SKU not in the catalog — add it to amazon_sku_map`);
+    for (const r of result) {
+      const date = toIsoDate(r[SELLER_FIELDS.date]);
+      if (!date) continue;
+      rows.push({
+        date,
+        marketplace_id: account.marketplace,
+        sessions: num(r["traffic.sessions"]),
+        page_views: num(r["traffic.pageViews"]),
+        // Kept as a cross-check against amz_orders, not as the sales figure
+        // anything reports on. If these drift apart, the order import is
+        // stale — which is the failure this table exists to make visible.
+        units_ordered: num(r["sales.unitsOrdered"]),
+        ordered_sales: num(r["sales.orderedProductSales.amount"]),
+        synced_at: new Date().toISOString(),
+      });
     }
+    if (!result.length) notes.push(`${account.label}: no traffic rows in window`);
   }
 
   return { rows, notes };
@@ -401,7 +338,7 @@ export default async function handler(req, res) {
     const dbAliases = await loadSkuAliases();
     const resolve = makeResolver(dbAliases);
 
-    const seller = await syncSeller(range, resolve);
+    const seller = await syncSeller(range);
     notes.push(...seller.notes);
 
     const ads = await syncAds(range, resolve);
@@ -411,7 +348,15 @@ export default async function handler(req, res) {
     notes.push(...gmc.notes);
 
     if (!dry) {
-      written += await upsert("amz_sales_daily", seller.rows, "date,marketplace_id,amazon_sku");
+      // Traffic only. amz_sales_daily is written by /api/sync/orders from
+      // Amazon's own order report — never from here. See migration 0018.
+      try {
+        written += await upsert("amz_traffic_daily", seller.rows, "date,marketplace_id");
+      } catch (err) {
+        notes.push(
+          `amz_traffic_daily: ${err.message} — run migration 0018, then traffic charts fill in`,
+        );
+      }
       written += await upsert("ads_daily", ads.campaignRows, "date,platform,account_id,campaign_id");
       written += await upsert("ads_sku_daily", ads.skuRows, "date,platform,account_id,amazon_sku");
       written += await upsert("gmc_account_issues", gmc.issueRows, "account_id,title");
@@ -424,7 +369,7 @@ export default async function handler(req, res) {
       range,
       written,
       counts: {
-        seller: seller.rows.length,
+        sellerTraffic: seller.rows.length,
         adCampaigns: ads.campaignRows.length,
         adSkus: ads.skuRows.length,
         gmcIssues: gmc.issueRows.length,
