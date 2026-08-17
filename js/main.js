@@ -53,6 +53,14 @@ initTheme();
   if (timedOut) {
     console.warn("[boot] auth init timed out — falling through to login");
   }
+  // No password prompt: if there is no session, mint an anonymous one. The
+  // password screen stays as a fallback for when anonymous sign-ins are
+  // disabled, so a Supabase setting change can never lock the team out.
+  if (!auth.isAuthed()) {
+    const anon = await auth.signInAnonymously();
+    if (!anon.ok) console.warn("[boot] anonymous sign-in unavailable:", anon.error);
+  }
+
   console.info("[boot] authed =", auth.isAuthed());
   if (auth.isAuthed()) {
     try {
@@ -70,9 +78,12 @@ initTheme();
     if (session) {
       await showApp();
     } else {
+      // Signed out — re-establish anonymously rather than prompting.
       mounted.clear();
       resetCache();
-      showLogin();
+      const anon = await auth.signInAnonymously();
+      if (anon.ok) await showApp();
+      else showLogin();
     }
   });
 })();
