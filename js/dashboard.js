@@ -17,6 +17,7 @@
 import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
   fetchSeoSessions, fetchAdsBySku, fetchStoreCosts, fetchTraffic, fetchAmzOrders,
+  fetchSeoQueries, fetchSeoPages, rollupSearch,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
@@ -202,7 +203,8 @@ async function render() {
   const body = panelEl.querySelector(`#${P}Body`);
   body.innerHTML = loadingBox();
 
-  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, traffic, amzOrders, savedLayout] = await Promise.all([
+  const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, traffic, amzOrders,
+         seoQueryRows, seoPageRows, savedLayout] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
     fetchSeoSessions(period),
@@ -210,6 +212,8 @@ async function render() {
     fetchStoreCosts(),
     fetchTraffic(period),
     fetchAmzOrders(period),
+    fetchSeoQueries(period),
+    fetchSeoPages(period),
     layout ? Promise.resolve(layout) : loadLayout(),
   ]);
   layout = savedLayout;
@@ -384,6 +388,14 @@ async function render() {
     storeCosts: (storeCostRows?.rows || [])[0] || {},
     shopSales,
     amzT, shopT, adT, adM, revenue, bySku, byProduct, amzOrders,
+    // Search Console, rolled up across the window. Position is re-weighted
+    // by impressions inside rollupSearch — it is an average rank, not a
+    // count, so it can never be summed or averaged flat.
+    search: {
+      queries: rollupSearch(seoQueryRows?.rows || [], "query"),
+      pages: rollupSearch(seoPageRows?.rows || [], "page_path"),
+      error: seoQueryRows?.error || seoPageRows?.error || null,
+    },
     spendByPlatform, campaigns, salesLog, daily,
     available: daysAvailable(),
     exportData: {

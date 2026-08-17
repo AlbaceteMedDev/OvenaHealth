@@ -33,8 +33,12 @@ export function mountMargins(el) {
     <div class="tab-header">
       <div class="titles">
         <h2>Margins</h2>
-        <p>Enter cost-of-goods per SKU; profit per unit and net margin update live.
-        <span class="muted-inline">Units sold come from Amazon. Net is after both COGS and Amazon's fees per unit sold — a SKU showing no fee has none recorded, which is not the same as selling fee-free.</span></p>
+        <p>Enter cost-of-goods per SKU; product margin per unit updates live.
+        <span class="muted-inline">Units sold come from Amazon. This tab stops at COGS and Amazon's fees — it does
+        NOT subtract shipping, payment processing or advertising, so its percentages are higher than the
+        contribution and net figures on Overview. Use it to compare products against each other, not to judge
+        whether the business is profitable. A SKU showing no fee has none recorded, which is not the same as
+        selling fee-free.</span></p>
       </div>
       <div class="segmented" role="group" aria-label="Period">
         ${[7, 30, 90].map((d) => `<button data-period="${d}" aria-pressed="${d === 30}">${d}d</button>`).join("")}
@@ -73,10 +77,10 @@ export function mountMargins(el) {
               <th class="num">Retail</th>
               <th class="num">COGS</th>
               <th class="num">Amazon fee</th>
-              <th class="num">Net / unit</th>
-              <th class="num">Net %</th>
+              <th class="num">After fees / unit</th>
+              <th class="num">Margin %</th>
               <th class="num">Units sold</th>
-              <th class="num">Net profit</th>
+              <th class="num">Product margin</th>
             </tr>
           </thead>
           <tbody id="marBody"></tbody>
@@ -157,12 +161,13 @@ function renderHero() {
   const coverage = rows.length > 0 ? totalCogsCovered / rows.length : 0;
 
   panelEl.querySelector("#marHero").innerHTML = `
-    <div class="eyebrow">Estimated net profit after Amazon fees · last ${period} days</div>
+    <div class="eyebrow">Product margin after COGS and Amazon fees · last ${period} days</div>
     <div class="figure">
       <div class="number">${fmtCurrency(periodNetProfit)}</div>
-      <span class="delta">${fmtPercent(blendedMargin)} blended net margin</span>
+      <span class="delta">${fmtPercent(blendedMargin)} of revenue</span>
     </div>
     <div class="sub">${fmtCurrency(periodRevenue)} revenue · ${totalCogsCovered} of ${rows.length} SKUs have COGS entered (${fmtPercent(coverage)})</div>
+    <div class="sub">Before shipping, payment fees and advertising — see Overview for contribution and net.</div>
   `;
 }
 

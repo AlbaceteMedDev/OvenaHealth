@@ -166,6 +166,20 @@ export const SELLER_FIELDS = {
   ],
 };
 
+// Google Search Console. The only source for what people actually typed:
+// Shopify collapses every organic visit into one "search" bucket.
+//
+// `position` is an AVERAGE rank, not a count — it must never be summed.
+// Rolling it up across days or rows means weighting by impressions, which
+// is why impressions are always pulled alongside it.
+export const SEARCH_CONSOLE_FIELDS = {
+  date: "_NORMALIZED_DATE_FIELD_YEAR_MONTH_DAY",
+  query: "search_query.query",
+  page: "page.pagepath",
+  site: "site.siteUrl",
+  metrics: ["clicks", "impressions", "ctr", "position"],
+};
+
 export const AMAZON_ADS_FIELDS = {
   date: "_NORMALIZED_DATE_FIELD_YEAR_MONTH_DAY",
   campaignId: "campaignId",

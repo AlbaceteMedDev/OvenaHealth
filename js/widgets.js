@@ -589,6 +589,85 @@ export const WIDGETS = [
   },
 
   {
+    id: "seo-impressions", title: "Search impressions", group: "SEO", size: "kpi", spans: [3, 4, 6],
+    render: (c, span) => {
+      const q = c.search?.queries || [];
+      const imp = q.reduce((a, r) => a + r.impressions, 0);
+      const clicks = q.reduce((a, r) => a + r.clicks, 0);
+      return kpiHtml(term("Search impressions", "IMPRESSIONS"), imp ? fmtNumber(imp) : dash,
+        imp > 0
+          ? `${fmtNumber(clicks)} clicks · ${fmtPercent(clicks / imp)} CTR`
+          : "Search Console not connected");
+    },
+  },
+  {
+    id: "seo-position", title: "Average position", group: "SEO", size: "kpi", spans: [3, 4, 6],
+    render: (c, span) => {
+      // Impression-weighted, never a mean of the daily means — one
+      // impression at rank 1 must not outweigh a thousand at rank 4.
+      const q = c.search?.queries || [];
+      const imp = q.reduce((a, r) => a + r.impressions, 0);
+      const w = q.reduce((a, r) => a + r.position * r.impressions, 0);
+      return kpiHtml(term("Average position", "POSITION"), imp > 0 ? (w / imp).toFixed(1) : dash,
+        imp > 0 ? "weighted by impressions · lower is better" : "Search Console not connected");
+    },
+  },
+  {
+    id: "seo-top-queries", title: "Top search queries", group: "SEO", size: "half", spans: [6, 8, 12],
+    render: (c, span) => {
+      const rows = (c.search?.queries || []).slice(0, rowsFor(span)).map((r) => `<tr>
+          <td>${escapeHtml(r.query)}</td>
+          <td class="num">${fmtNumber(r.clicks)}</td>
+          <td class="num">${fmtNumber(r.impressions)}</td>
+          <td class="num w-opt">${fmtPercent(r.ctr)}</td>
+          <td class="num w-opt">${r.position ? r.position.toFixed(1) : dash}</td>
+        </tr>`);
+      return card("Top search queries", table(
+        [{ label: "Query" }, { label: "Clicks", num: true }, { label: "Impressions", num: true },
+         { label: "CTR", num: true, opt: true }, { label: "Position", num: true, opt: true }],
+        rows, { span, empty: "Search Console isn't connected — no keyword data yet." }),
+        { flush: true, foot: "what people actually typed" });
+    },
+  },
+  {
+    id: "seo-top-pages", title: "Top landing pages from search", group: "SEO", size: "half", spans: [6, 8, 12],
+    render: (c, span) => {
+      const rows = (c.search?.pages || []).slice(0, rowsFor(span)).map((r) => `<tr>
+          <td>${escapeHtml(r.page_path)}</td>
+          <td class="num">${fmtNumber(r.clicks)}</td>
+          <td class="num">${fmtNumber(r.impressions)}</td>
+          <td class="num w-opt">${r.position ? r.position.toFixed(1) : dash}</td>
+        </tr>`);
+      return card("Top landing pages from search", table(
+        [{ label: "Path" }, { label: "Clicks", num: true }, { label: "Impressions", num: true },
+         { label: "Position", num: true, opt: true }],
+        rows, { span, empty: "Search Console isn't connected — no landing page data yet." }),
+        { flush: true, foot: "where Google sends people" });
+    },
+  },
+  {
+    id: "seo-missed", title: "Seen but not clicked", group: "SEO", size: "half", spans: [6, 8, 12],
+    render: (c, span) => {
+      // High impressions, no clicks. These are the queries the store already
+      // ranks for and is failing to win — usually a title or meta problem
+      // rather than a ranking one, which makes them the cheapest fixes.
+      const rows = (c.search?.queries || [])
+        .filter((r) => r.impressions >= 10 && r.clicks === 0)
+        .sort((a, b) => b.impressions - a.impressions)
+        .slice(0, rowsFor(span))
+        .map((r) => `<tr>
+          <td>${escapeHtml(r.query)}</td>
+          <td class="num">${fmtNumber(r.impressions)}</td>
+          <td class="num w-opt">${r.position ? r.position.toFixed(1) : dash}</td>
+        </tr>`);
+      return card("Seen but not clicked", table(
+        [{ label: "Query" }, { label: "Impressions", num: true }, { label: "Position", num: true, opt: true }],
+        rows, { span, empty: "Nothing with 10+ impressions and no clicks." }),
+        { flush: true, foot: "ranking already — losing the click" });
+    },
+  },
+
+  {
     id: "seo-trend", title: "Organic search over time", group: "SEO", size: "half", spans: [6, 8, 12],
     render: (c, span) => card("Organic search over time", `
       <svg class="chart" data-chart="seotrend"></svg>

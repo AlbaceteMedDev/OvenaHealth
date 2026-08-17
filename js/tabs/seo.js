@@ -27,7 +27,10 @@ export const mountSeo = makeDashboard({
   platform: null,
   defaultLayout: [
     "seo-sessions", "seo-organic", "seo-direct-share",
+    "seo-impressions", "seo-position",
     "seo-trend", "seo-by-source",
+    "seo-top-queries", "seo-top-pages",
+    "seo-missed",
     "seo-by-day",
     "sync-status",
   ],

@@ -50,6 +50,12 @@ export const MERCHANT_CENTER_ACCOUNTS = envList("CATCHR_MERCHANT_CENTER_ACCOUNTS
   { id: "5787103589", authorization_id: 50771, label: "Ovena Health" },
 ]);
 
+// Google Search Console. Empty until the property is authorised in Catchr
+// (Sources -> Google Search Console); the sync reports that plainly rather
+// than failing. Set CATCHR_SEARCH_CONSOLE_ACCOUNTS once connected:
+//   [{"id":"sc-domain:ovenahealth.com","authorization_id":00000}]
+export const SEARCH_CONSOLE_ACCOUNTS = envList("CATCHR_SEARCH_CONSOLE_ACCOUNTS", []);
+
 export const AD_PLATFORMS = [
   { platform: "amazon-ads", accounts: AMAZON_ADS_ACCOUNTS, perSku: true },
   { platform: "facebook-ads", accounts: FACEBOOK_ADS_ACCOUNTS, perSku: false },

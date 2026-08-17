@@ -180,6 +180,62 @@ export function fetchSeoSessions(days) {
   );
 }
 
+// Search Console: what people typed, and where the store ranked for it.
+// Both degrade to empty when the tables or the Catchr authorisation are
+// missing, so the SEO tab shows an empty state rather than an error.
+//
+// Ordered by clicks rather than date: the useful read is "which queries earn
+// anything", and the tail is mostly single-impression noise.
+export function fetchSeoQueries(days) {
+  return cached("seoQueries", { days }, () =>
+    run(
+      supabase
+        .from("seo_queries_daily")
+        .select("date, query, clicks, impressions, position")
+        .gte("date", startDateFor(days))
+        .order("clicks", { ascending: false })
+        .limit(2000),
+    ),
+  );
+}
+
+export function fetchSeoPages(days) {
+  return cached("seoPages", { days }, () =>
+    run(
+      supabase
+        .from("seo_pages_daily")
+        .select("date, page_path, clicks, impressions, position")
+        .gte("date", startDateFor(days))
+        .order("clicks", { ascending: false })
+        .limit(2000),
+    ),
+  );
+}
+
+// Roll daily query/page rows up across the window. Clicks and impressions
+// sum; position must NOT — it is an average rank, so it is re-weighted by
+// impressions. Averaging the averages would let a query with one impression
+// at rank 1 outrank one with a thousand impressions at rank 4.
+export function rollupSearch(rows, key) {
+  const map = new Map();
+  for (const r of rows) {
+    const k = r[key];
+    if (!k) continue;
+    const slot = map.get(k) || { [key]: k, clicks: 0, impressions: 0, posWeighted: 0 };
+    slot.clicks += r.clicks || 0;
+    slot.impressions += r.impressions || 0;
+    slot.posWeighted += (Number(r.position) || 0) * (r.impressions || 0);
+    map.set(k, slot);
+  }
+  return [...map.values()]
+    .map((s) => ({
+      ...s,
+      position: s.impressions > 0 ? s.posWeighted / s.impressions : 0,
+      ctr: s.impressions > 0 ? s.clicks / s.impressions : 0,
+    }))
+    .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions);
+}
+
 // Store-wide rates that are not per-SKU: payment processing and storage.
 export function fetchStoreCosts() {
   return cached("storeCosts", {}, () =>
