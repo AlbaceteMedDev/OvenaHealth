@@ -9,13 +9,66 @@
 // zero exactly as it should.
 //
 // Required env:
-//   SHOPIFY_STORE_DOMAIN  e.g. c5s06e-3n.myshopify.com
-//   SHOPIFY_ADMIN_TOKEN   Admin API access token (shpat_…) with read_orders
-//   SHOPIFY_API_VERSION   optional, default 2025-01
+//   SHOPIFY_STORE_DOMAIN   e.g. c5s06e-3n.myshopify.com
+//   SHOPIFY_API_VERSION    optional, default 2025-01
+//
+// Then EITHER a token that does not expire:
+//   SHOPIFY_ADMIN_TOKEN    Admin API access token (shpat_…) with read_orders
+// OR credentials this mints one from, which is the durable option:
+//   SHOPIFY_CLIENT_ID      app client id
+//   SHOPIFY_CLIENT_SECRET  app client secret (shpss_…)
+//
+// Why the second path exists: a token from the client_credentials grant is
+// only valid for 24 hours. Pasting one into SHOPIFY_ADMIN_TOKEN works for a
+// day and then returns 401 on every run forever after — which is exactly
+// what this sync did. Holding the credentials and minting per run is the
+// only arrangement that keeps working, and the mint is one request.
 
 const DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
-const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
+const STATIC_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
+const CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
+const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
+
+// Cached across invocations that share a warm lambda. Re-minted a minute
+// before expiry so a request can never start with a token that dies mid-flight.
+let minted = null;   // { token, expiresAt }
+
+async function accessToken() {
+  if (STATIC_TOKEN) return STATIC_TOKEN;
+  if (!CLIENT_ID || !CLIENT_SECRET) {
+    throw new ShopifyError(
+      "Set SHOPIFY_ADMIN_TOKEN, or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET to mint one",
+    );
+  }
+  if (minted && Date.now() < minted.expiresAt - 60_000) return minted.token;
+
+  const res = await fetch(`https://${DOMAIN}/admin/oauth/access_token`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "client_credentials",
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    }),
+  });
+  const body = await res.text();
+  if (!res.ok) {
+    throw new ShopifyError(`Shopify token grant failed (${res.status}): ${body.slice(0, 200)}`, {
+      status: res.status,
+    });
+  }
+  let parsed;
+  try { parsed = JSON.parse(body); } catch { parsed = null; }
+  if (!parsed?.access_token) {
+    throw new ShopifyError("Shopify token grant returned no access_token");
+  }
+  minted = {
+    token: parsed.access_token,
+    expiresAt: Date.now() + (Number(parsed.expires_in) || 3600) * 1000,
+  };
+  return minted.token;
+}
 
 export class ShopifyError extends Error {
   constructor(message, { status = null, body = null } = {}) {
@@ -27,18 +80,19 @@ export class ShopifyError extends Error {
 }
 
 export function isConfigured() {
-  return Boolean(DOMAIN && TOKEN);
+  return Boolean(DOMAIN && (STATIC_TOKEN || (CLIENT_ID && CLIENT_SECRET)));
 }
 
 async function graphql(query, variables = {}) {
   if (!isConfigured()) {
-    throw new ShopifyError("SHOPIFY_STORE_DOMAIN / SHOPIFY_ADMIN_TOKEN are not set");
+    throw new ShopifyError("SHOPIFY_STORE_DOMAIN and a token or client credentials are not set");
   }
+  const token = await accessToken();
   const res = await fetch(`https://${DOMAIN}/admin/api/${VERSION}/graphql.json`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "X-Shopify-Access-Token": TOKEN,
+      "X-Shopify-Access-Token": token,
     },
     body: JSON.stringify({ query, variables }),
   });
