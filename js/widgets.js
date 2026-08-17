@@ -668,6 +668,83 @@ export const WIDGETS = [
   },
 
   {
+    id: "ga-organic", title: "Organic sessions (GA4)", group: "SEO", size: "kpi", spans: [3, 4, 6],
+    render: (c, span) => {
+      const ch = c.ga?.channels || [];
+      const all = ch.reduce((a, r) => a + r.sessions, 0);
+      // "Organic Search" and "Organic Shopping" are separate GA4 channels but
+      // both are unpaid Google surfaces, so both count as earned here.
+      const organic = ch.filter((r) => /^Organic (Search|Shopping)$/i.test(r.channel_group))
+        .reduce((a, r) => a + r.sessions, 0);
+      return kpiHtml(term("Organic sessions (GA4)", "SESSIONS"), all ? fmtNumber(organic) : dash,
+        all > 0 ? `${fmtPercent(organic / all)} of ${fmtNumber(all)} GA4 sessions` : "GA4 not synced");
+    },
+  },
+  {
+    id: "ga-by-channel", title: "Acquisition channels (GA4)", group: "SEO", size: "half", spans: [6, 8, 12],
+    render: (c, span) => {
+      const rows = (c.ga?.channels || []).slice(0, rowsFor(span)).map((r) => `<tr>
+          <td>${escapeHtml(r.channel_group)}</td>
+          <td class="num">${fmtNumber(r.sessions)}</td>
+          <td class="num w-opt">${fmtPercent(r.engagementRate)}</td>
+          <td class="num">${fmtNumber(Math.round(r.conversions))}</td>
+          <td class="num">${r.revenue > 0 ? fmtCurrency(r.revenue) : dash}</td>
+        </tr>`);
+      return card("Acquisition channels (GA4)", table(
+        [{ label: "Channel" }, { label: "Sessions", num: true },
+         { label: "Engaged", num: true, opt: true },
+         { label: "Conversions", num: true }, { label: "Revenue", num: true }],
+        rows, { span, empty: "No GA4 data — run the SEO sync." }),
+        { flush: true, foot: "GA4 counts sessions its own way; Shopify's total will differ" });
+    },
+  },
+  {
+    id: "ga-landing-pages", title: "Landing pages (GA4)", group: "SEO", size: "half", spans: [6, 8, 12],
+    render: (c, span) => {
+      const rows = (c.ga?.pages || []).slice(0, rowsFor(span)).map((r) => `<tr>
+          <td>${escapeHtml(r.landing_page)}</td>
+          <td class="num">${fmtNumber(r.sessions)}</td>
+          <td class="num w-opt">${fmtPercent(r.engagementRate)}</td>
+          <td class="num">${r.revenue > 0 ? fmtCurrency(r.revenue) : dash}</td>
+        </tr>`);
+      return card("Landing pages (GA4)", table(
+        [{ label: "Page" }, { label: "Sessions", num: true },
+         { label: "Engaged", num: true, opt: true }, { label: "Revenue", num: true }],
+        rows, { span, empty: "No GA4 data — run the SEO sync." }),
+        { flush: true, foot: "where sessions started" });
+    },
+  },
+  {
+    id: "ga-paid-vs-earned", title: "Paid vs earned traffic", group: "SEO", size: "half", spans: [4, 6, 8, 12],
+    render: (c, span) => {
+      // The question ad spend actually raises: how much of the traffic did
+      // money buy, and did any of it convert. Paid channels are whatever GA4
+      // prefixes with "Paid"; everything else is earned or direct.
+      const ch = c.ga?.channels || [];
+      const paid = ch.filter((r) => /^Paid /i.test(r.channel_group));
+      const earned = ch.filter((r) => !/^Paid /i.test(r.channel_group));
+      const sum = (a, f) => a.reduce((n, r) => n + f(r), 0);
+      const line = (label, set) => {
+        const s = sum(set, (r) => r.sessions);
+        const cv = sum(set, (r) => r.conversions);
+        const rev = sum(set, (r) => r.revenue);
+        return `<tr>
+          <td>${label}</td>
+          <td class="num">${fmtNumber(s)}</td>
+          <td class="num">${fmtNumber(Math.round(cv))}</td>
+          <td class="num">${rev > 0 ? fmtCurrency(rev) : dash}</td>
+        </tr>`;
+      };
+      const rows = ch.length ? [line("Paid", paid), line("Earned &amp; direct", earned)] : [];
+      return card("Paid vs earned traffic", table(
+        [{ label: "" }, { label: "Sessions", num: true },
+         { label: "Conversions", num: true }, { label: "Revenue", num: true }],
+        rows, { span, empty: "No GA4 data — run the SEO sync." }),
+        { flush: true, foot: "GA4 attribution, not Amazon's" });
+    },
+  },
+
+  {
     id: "seo-trend", title: "Organic search over time", group: "SEO", size: "half", spans: [6, 8, 12],
     render: (c, span) => card("Organic search over time", `
       <svg class="chart" data-chart="seotrend"></svg>

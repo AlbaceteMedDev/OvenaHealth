@@ -56,6 +56,12 @@ export const MERCHANT_CENTER_ACCOUNTS = envList("CATCHR_MERCHANT_CENTER_ACCOUNTS
 //   [{"id":"sc-domain:ovenahealth.com","authorization_id":00000}]
 export const SEARCH_CONSOLE_ACCOUNTS = envList("CATCHR_SEARCH_CONSOLE_ACCOUNTS", []);
 
+// GA4. Connected 2026-08-12, unused until the SEO tab needed acquisition
+// detail Shopify cannot supply.
+export const GA_ACCOUNTS = envList("CATCHR_GA_ACCOUNTS", [
+  { id: "properties/537744482", authorization_id: 50770, label: "OvenaHealth" },
+]);
+
 export const AD_PLATFORMS = [
   { platform: "amazon-ads", accounts: AMAZON_ADS_ACCOUNTS, perSku: true },
   { platform: "facebook-ads", accounts: FACEBOOK_ADS_ACCOUNTS, perSku: false },

@@ -10,11 +10,20 @@
 // buy", and mixing the two invites reading a good traffic day as a good
 // revenue day.
 //
-// One source only — Shopify's own session data, via ShopifyQL, bucketed by
-// referrer_source. That is the whole of what the storefront app can see:
-// direct, search, social, email, unknown. Shopify does not break "search"
-// down by engine or by query, so there is no keyword or ranking data here
-// and none can be added without connecting Search Console separately.
+// Three sources, deliberately side by side rather than merged:
+//
+//   Shopify   its own account of itself — five coarse referrer buckets
+//   GA4       ten acquisition channels, engagement, conversions, revenue
+//   Search    the actual queries, rank and impressions
+//   Console
+//
+// Shopify and GA4 disagree on totals (425 against 510 in the same window)
+// because they count sessions differently. Both are shown. Merging them
+// would pick a winner silently and turn a real measurement difference into
+// what looks like a bug later.
+//
+// GA4 reports the CHANNEL a visit arrived through, never the query behind
+// it, so it does not replace Search Console — nothing does.
 
 import { makeDashboard } from "../dashboard.js";
 
@@ -31,6 +40,8 @@ export const mountSeo = makeDashboard({
     "seo-trend", "seo-by-source",
     "seo-top-queries", "seo-top-pages",
     "seo-missed",
+    "ga-organic", "ga-paid-vs-earned",
+    "ga-by-channel", "ga-landing-pages",
     "seo-by-day",
     "sync-status",
   ],

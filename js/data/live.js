@@ -236,6 +236,63 @@ export function rollupSearch(rows, key) {
     .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions);
 }
 
+// GA4 acquisition. Deliberately kept alongside Shopify's own session data
+// rather than replacing it: the two count sessions differently and disagree
+// (425 against 510 over the same window), and hiding one behind the other
+// would make that disagreement look like a data error later.
+export function fetchGaChannels(days) {
+  return cached("gaChannels", { days }, () =>
+    run(
+      supabase
+        .from("ga_channels_daily")
+        .select("date, channel_group, sessions, engaged_sessions, active_users, new_users, conversions, purchase_revenue")
+        .gte("date", startDateFor(days))
+        .order("date", { ascending: true }),
+    ),
+  );
+}
+
+export function fetchGaLandingPages(days) {
+  return cached("gaPages", { days }, () =>
+    run(
+      supabase
+        .from("ga_landing_pages_daily")
+        .select("date, landing_page, sessions, engaged_sessions, conversions, purchase_revenue")
+        .gte("date", startDateFor(days))
+        .order("sessions", { ascending: false })
+        .limit(2000),
+    ),
+  );
+}
+
+// Roll GA4 daily rows up across the window, summing every metric. Unlike
+// Search Console there is no average-rank trap here — every GA4 field used
+// is a count or a currency amount, so a plain sum is correct.
+export function rollupGa(rows, key) {
+  const map = new Map();
+  for (const r of rows) {
+    const k = r[key];
+    if (!k) continue;
+    const s = map.get(k) || {
+      [key]: k, sessions: 0, engaged: 0, users: 0, newUsers: 0, conversions: 0, revenue: 0,
+    };
+    s.sessions += r.sessions || 0;
+    s.engaged += r.engaged_sessions || 0;
+    s.users += r.active_users || 0;
+    s.newUsers += r.new_users || 0;
+    s.conversions += Number(r.conversions) || 0;
+    s.revenue += Number(r.purchase_revenue) || 0;
+    map.set(k, s);
+  }
+  return [...map.values()]
+    .map((s) => ({
+      ...s,
+      engagementRate: s.sessions > 0 ? s.engaged / s.sessions : 0,
+      cvr: s.sessions > 0 ? s.conversions / s.sessions : 0,
+    }))
+    .sort((a, b) => b.sessions - a.sessions);
+}
+
 // Store-wide rates that are not per-SKU: payment processing and storage.
 export function fetchStoreCosts() {
   return cached("storeCosts", {}, () =>

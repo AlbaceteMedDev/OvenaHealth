@@ -18,6 +18,7 @@ import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
   fetchSeoSessions, fetchAdsBySku, fetchStoreCosts, fetchTraffic, fetchAmzOrders,
   fetchSeoQueries, fetchSeoPages, rollupSearch,
+  fetchGaChannels, fetchGaLandingPages, rollupGa,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
@@ -204,7 +205,7 @@ async function render() {
   body.innerHTML = loadingBox();
 
   const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, traffic, amzOrders,
-         seoQueryRows, seoPageRows, savedLayout] = await Promise.all([
+         seoQueryRows, seoPageRows, gaChannelRows, gaPageRows, savedLayout] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
     fetchSeoSessions(period),
@@ -214,6 +215,8 @@ async function render() {
     fetchAmzOrders(period),
     fetchSeoQueries(period),
     fetchSeoPages(period),
+    fetchGaChannels(period),
+    fetchGaLandingPages(period),
     layout ? Promise.resolve(layout) : loadLayout(),
   ]);
   layout = savedLayout;
@@ -395,6 +398,13 @@ async function render() {
       queries: rollupSearch(seoQueryRows?.rows || [], "query"),
       pages: rollupSearch(seoPageRows?.rows || [], "page_path"),
       error: seoQueryRows?.error || seoPageRows?.error || null,
+    },
+    // GA4 acquisition. Every field here is a count or an amount, so a plain
+    // sum is correct — unlike Search Console's position.
+    ga: {
+      channels: rollupGa(gaChannelRows?.rows || [], "channel_group"),
+      pages: rollupGa(gaPageRows?.rows || [], "landing_page"),
+      error: gaChannelRows?.error || gaPageRows?.error || null,
     },
     spendByPlatform, campaigns, salesLog, daily,
     available: daysAvailable(),

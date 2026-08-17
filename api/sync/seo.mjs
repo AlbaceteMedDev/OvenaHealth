@@ -17,8 +17,8 @@
 // failing and taking the session data down with it.
 
 import { sessionsBySource, isConfigured } from "../_lib/shopify.mjs";
-import { query, toIsoDate, num, SEARCH_CONSOLE_FIELDS } from "../_lib/catchr.mjs";
-import { SEARCH_CONSOLE_ACCOUNTS } from "../_lib/accounts.mjs";
+import { query, toIsoDate, num, SEARCH_CONSOLE_FIELDS, GA_FIELDS } from "../_lib/catchr.mjs";
+import { SEARCH_CONSOLE_ACCOUNTS, GA_ACCOUNTS } from "../_lib/accounts.mjs";
 import { upsert, startRun, finishRun } from "../_lib/db.mjs";
 import { authorized, UNAUTHORIZED } from "../_lib/auth.mjs";
 import { DATA_START } from "../../js/config.js";
@@ -95,6 +95,69 @@ async function syncSearchConsole(range) {
   return { queryRows, pageRows, notes };
 }
 
+// ─── GA4: acquisition channels and landing pages ─────────────────────
+// Two breakdowns, same reason as Search Console: crossing channel with
+// landing page multiplies rows for a cross nobody reads, and GA4 applies
+// its own sampling and (other) bucketing to wide queries, so the totals
+// would stop matching either breakdown on its own.
+async function syncGa4(range) {
+  const channelRows = [];
+  const pageRows = [];
+  const notes = [];
+
+  if (!GA_ACCOUNTS.length) {
+    notes.push("ga4: no property configured");
+    return { channelRows, pageRows, notes };
+  }
+
+  const F = GA_FIELDS;
+  const stamp = new Date().toISOString();
+
+  for (const account of GA_ACCOUNTS) {
+    const acct = [{ id: account.id, authorization_id: account.authorization_id }];
+
+    for (const [dim, sink, key] of [[F.channel, channelRows, "channel_group"],
+                                    [F.landingPage, pageRows, "landing_page"]]) {
+      try {
+        const result = await query("google-analytics", {
+          accounts: acct,
+          ...range,
+          dimensions: [F.date, dim],
+          metrics: F.metrics,
+          sorts: [{ field: F.date, direction: "asc" }],
+        });
+        for (const r of result) {
+          const date = toIsoDate(r[F.date]);
+          const value = r[dim];
+          if (!date || !value) continue;
+          const row = {
+            date,
+            property_id: account.id,
+            [key]: String(value),
+            sessions: num(r.sessions),
+            engaged_sessions: num(r.engagedSessions),
+            conversions: num(r.conversions),
+            purchase_revenue: num(r.purchaseRevenue),
+            synced_at: stamp,
+          };
+          // Users are only meaningful per channel; a landing page's "users"
+          // would double count anyone who entered on more than one page.
+          if (key === "channel_group") {
+            row.active_users = num(r.activeUsers);
+            row.new_users = num(r.newUsers);
+          }
+          sink.push(row);
+        }
+        if (!result.length) notes.push(`ga4 ${key}: no rows in window`);
+      } catch (err) {
+        notes.push(`ga4 ${key}: ${err.message}`);
+      }
+    }
+  }
+
+  return { channelRows, pageRows, notes };
+}
+
 export default async function handler(req, res) {
   if (!authorized(req)) return res.status(401).json(UNAUTHORIZED);
 
@@ -133,9 +196,24 @@ export default async function handler(req, res) {
       }
     }
 
+    // GA4.
+    const ga = await syncGa4(rangeFor(days));
+    notes.push(...ga.notes);
+    if (!dry) {
+      try {
+        written += await upsert("ga_channels_daily", ga.channelRows, "date,property_id,channel_group");
+        written += await upsert("ga_landing_pages_daily", ga.pageRows, "date,property_id,landing_page");
+      } catch (err) {
+        notes.push(`ga4 write: ${err.message} — run migration 0020`);
+      }
+    }
+
     const summary = {
       ok: true, dry, days, written,
-      counts: { sessions: rows.length, queries: sc.queryRows.length, pages: sc.pageRows.length },
+      counts: {
+        sessions: rows.length, queries: sc.queryRows.length, pages: sc.pageRows.length,
+        gaChannels: ga.channelRows.length, gaPages: ga.pageRows.length,
+      },
       bySource, notes,
     };
     // Object form, not positional. This used to be finishRun(runId, "ok",

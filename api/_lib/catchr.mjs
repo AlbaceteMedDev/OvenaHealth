@@ -180,6 +180,27 @@ export const SEARCH_CONSOLE_FIELDS = {
   metrics: ["clicks", "impressions", "ctr", "position"],
 };
 
+// GA4. Reports the CHANNEL a visit arrived through, never the query behind
+// it — organicGoogleSearch* exist in the schema but stay empty until a
+// Search Console property is linked to the GA4 property.
+//
+// sessionDefaultChannelGroup, not defaultChannelGroup: the former attributes
+// on the session that is being counted, the latter on the event, and mixing
+// them double-counts a session whose events span channels.
+export const GA_FIELDS = {
+  date: "_NORMALIZED_DATE_FIELD_YEAR_MONTH_DAY",
+  channel: "sessionDefaultChannelGroup",
+  landingPage: "landingPagePlusQueryString",
+  metrics: [
+    "sessions",
+    "engagedSessions",
+    "activeUsers",
+    "newUsers",
+    "conversions",
+    "purchaseRevenue",
+  ],
+};
+
 export const AMAZON_ADS_FIELDS = {
   date: "_NORMALIZED_DATE_FIELD_YEAR_MONTH_DAY",
   campaignId: "campaignId",
