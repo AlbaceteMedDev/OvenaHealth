@@ -272,6 +272,7 @@ export default async function handler(req, res) {
   let tsv = null;
   let source = null;
   let preloaded = null;
+  let sourceNote = null;
 
   try {
     if (rebuild) {
@@ -316,14 +317,20 @@ export default async function handler(req, res) {
       }
       tsv = result.text;
     } else {
-      res.status(503).json({
-        ok: false,
-        error:
-          "No source for the All Orders report. Either set SPAPI_CLIENT_ID, SPAPI_CLIENT_SECRET and SPAPI_REFRESH_TOKEN, or POST the report TSV to this endpoint.",
-        howToUpload:
-          "Seller Central > Reports > Fulfilment > All Orders, then: curl -X POST '<this url>?secret=…' --data-binary @orders.txt -H 'content-type: text/plain'",
-      });
-      return;
+      // No report source. Failing here would mean the cron 503s twice an hour
+      // forever, so fall back to re-deriving amz_sales_daily from the order
+      // items already stored — always possible, idempotent, and it keeps the
+      // sales table consistent with amz_orders. It brings in no NEW orders,
+      // which the note says plainly rather than letting a 200 imply freshness.
+      source = "amz_orders (no report source)";
+      sourceNote =
+        "No SP-API credentials and no uploaded report — re-derived from stored orders only. " +
+        "NO NEW ORDERS were imported. Set SPAPI_CLIENT_ID / SPAPI_CLIENT_SECRET / " +
+        "SPAPI_REFRESH_TOKEN, or POST the All Orders TSV to this endpoint.";
+      preloaded = await select(
+        "amz_orders",
+        `select=purchase_day,sku,asin,product_name,quantity,item_price,currency,order_status&purchase_day=gte.${start}&limit=50000`,
+      );
     }
   } catch (err) {
     res.status(502).json({ ok: false, error: err.message });
@@ -337,6 +344,7 @@ export default async function handler(req, res) {
       ? { rows: preloaded, notes: [`Re-derived from ${preloaded.length} stored order item(s)`] }
       : parseAllOrders(tsv);
     const { rows, notes } = parsed;
+    if (sourceNote) notes.unshift(sourceNote);
     const stamp = parsed.stamp || new Date().toISOString();
     const marketplaceId = parsed.marketplaceId || MARKETPLACE_ID;
 
