@@ -158,3 +158,29 @@ export async function loadSkuAliases() {
     return new Map();
   }
 }
+
+// Delete rows matching a PostgREST filter expression, e.g.
+//   deleteWhere("amz_sales_daily", "date=gte.2026-07-19&date=lte.2026-08-18")
+//
+// The order importer rebuilds a date window rather than only upserting into
+// it. Amazon's All Orders report is authoritative for the window it covers,
+// so a row that survives from an earlier import is a row Amazon no longer
+// reports — a cancellation, usually — and it has to go rather than linger at
+// its old value. An upsert alone cannot express that.
+//
+// PostgREST refuses an unfiltered DELETE, and so does this: an empty filter
+// would silently empty the table.
+export async function deleteWhere(table, filter) {
+  assertConfigured();
+  if (!filter) throw new DbError(`deleteWhere(${table}) requires a filter`);
+  const res = await fetch(`${URL_BASE}/rest/v1/${table}?${filter}`, {
+    method: "DELETE",
+    headers: headers({ prefer: "return=minimal" }),
+  });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text();
+    throw new DbError(`delete ${table} failed (${res.status}): ${body.slice(0, 200)}`, {
+      status: res.status,
+    });
+  }
+}

@@ -77,16 +77,41 @@ Two consequences worth knowing:
 
 | Route | Schedule | What it writes |
 |---|---|---|
-| `/api/sync/catchr` | every 6h | `amz_sales_daily`, `ads_daily`, `ads_sku_daily`, `gmc_*` |
-| `/api/sync/shopify` | every 6h | `shop_sales_daily`, `shop_totals_daily` |
+| `/api/sync/catchr` | every 30 min | `amz_traffic_daily`, `ads_daily`, `ads_sku_daily`, `gmc_*` |
+| `/api/sync/shopify` | every 30 min | `shop_sales_daily`, `shop_totals_daily` |
+| `/api/sync/orders` | :05 and :35 | `amz_orders`, `amz_sales_daily` |
+| `/api/sync/seo` | every 6h | `seo_sessions`, Search Console, GA4 |
 | `/api/sync/fba` | daily 07:30 | `fba_inventory` |
-| `/api/health` | on demand | diagnostics; `?probe=1` discovers the Catchr contract |
+| `/api/health` | on demand | env checklist (public); accounts and `?probe=1` need the secret |
+
+**Amazon sales come from `/api/sync/orders`, not from Catchr.** Catchr's
+amazon-seller connector is accurate per day OR per SKU but never both, and
+the per-day-per-SKU shape the portal used to ask for overstated revenue by
+about 2x — see migration `0018_amazon_order_truth.sql`. `catchr` now writes
+only per-day traffic; the order importer reads Amazon's All Orders report
+and derives `amz_sales_daily` from order items, bucketed in **Pacific** time
+because that is what Amazon reports in.
+
+The order importer takes its report from SP-API when `SPAPI_*` is set, and
+otherwise from a POST body, so a Seller Central export can be loaded without
+credentials:
+
+```
+curl -X POST "https://…/api/sync/orders?secret=YOUR_CRON_SECRET" \
+     -H 'content-type: text/plain' --data-binary @AllOrders.txt
+```
+
+`/api/sync/orders?rebuild=1` re-derives `amz_sales_daily` from the order
+items already stored, without fetching anything. That is the repair path when
+a sales row is wrong but the orders behind it are right.
 
 The Shopify job always re-reads the whole window from `DATA_START` rather
 than just recent days: a refund issued today changes the net revenue of an
-order placed three weeks ago, and only a full re-read catches that.
+order placed three weeks ago, and only a full re-read catches that. The order
+importer rebuilds each day it covers for the same reason — a cancellation has
+to be able to remove revenue, which an upsert alone cannot express.
 
-All three require `CRON_SECRET`, passed as `Authorization: Bearer …` (which
+All of them require `CRON_SECRET`, passed as `Authorization: Bearer …` (which
 is what Vercel Cron sends) or `?secret=…` by hand. Manual runs accept
 `?days=90` to backfill and `?dry=1` to fetch without writing.
 

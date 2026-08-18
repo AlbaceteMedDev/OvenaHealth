@@ -10,6 +10,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/sync/orders?days=30",
+      "schedule": "5,35 * * * *"
+    },
+    {
       "path": "/api/sync/catchr?days=28",
       "schedule": "20 6 * * *"
     },
@@ -20,6 +24,10 @@
     {
       "path": "/api/sync/seo?days=30",
       "schedule": "45 */6 * * *"
+    },
+    {
+      "path": "/api/sync/orders?days=90",
+      "schedule": "40 6 * * *"
     }
   ],
   "functions": {

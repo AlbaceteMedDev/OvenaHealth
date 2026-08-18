@@ -153,3 +153,102 @@ export function toInventoryRow(summary, marketplaceId, resolveSku, stamp) {
     synced_at: stamp,
   };
 }
+
+// ─── Reports API ─────────────────────────────────────────────────────
+// The All Orders report is the only order-item-level truth Amazon exposes,
+// and it is what migration 0018 moved Amazon sales onto. Catchr cannot
+// supply it: its connector is accurate per day OR per SKU but never both.
+//
+// Reports are asynchronous — request, poll, then download a document from a
+// presigned URL that is usually gzipped. A cold request commonly takes a
+// minute or two, which is why the caller is handed the reportId back and can
+// resume polling on a later invocation instead of holding a function open.
+export const ALL_ORDERS_REPORT = "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL";
+
+async function post(path, body, token) {
+  const res = await fetch(HOST + path, {
+    method: "POST",
+    headers: {
+      "x-amz-access-token": token,
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const parsed = await res.json().catch(() => null);
+  if (!res.ok) {
+    const detail = parsed?.errors?.[0]?.message || parsed?.message || `HTTP ${res.status}`;
+    throw new SpApiError(`SP-API ${path} failed (${res.status}): ${detail}`, {
+      status: res.status,
+      body: parsed,
+    });
+  }
+  return parsed;
+}
+
+// Ask Amazon to build the report. Returns a reportId to poll.
+export async function requestAllOrdersReport({ start, end, marketplaceId = MARKETPLACE_ID }) {
+  const token = await accessToken();
+  const body = await post(
+    "/reports/2021-06-30/reports",
+    {
+      reportType: ALL_ORDERS_REPORT,
+      marketplaceIds: [marketplaceId],
+      dataStartTime: new Date(`${start}T00:00:00Z`).toISOString(),
+      dataEndTime: new Date(`${end}T23:59:59Z`).toISOString(),
+    },
+    token,
+  );
+  return body?.reportId || null;
+}
+
+export async function reportStatus(reportId) {
+  const token = await accessToken();
+  return get(`/reports/2021-06-30/reports/${encodeURIComponent(reportId)}`, {}, token);
+}
+
+// Download and decompress a finished report document.
+//
+// The payload is TSV, gzipped more often than not. DecompressionStream is a
+// platform API on Node 18+, so this stays dependency-free like the rest of
+// the file. Amazon serves NA flat files as Cp1252 rather than UTF-8; the few
+// bytes that differ are inside product names, which nothing keys on.
+export async function fetchReportDocument(reportDocumentId) {
+  const token = await accessToken();
+  const doc = await get(
+    `/reports/2021-06-30/documents/${encodeURIComponent(reportDocumentId)}`,
+    {},
+    token,
+  );
+  if (!doc?.url) throw new SpApiError("Report document had no download url", { body: doc });
+
+  const res = await fetch(doc.url);
+  if (!res.ok) throw new SpApiError(`Report document download failed (${res.status})`);
+
+  if ((doc.compressionAlgorithm || "").toUpperCase() === "GZIP") {
+    const stream = res.body.pipeThrough(new DecompressionStream("gzip"));
+    return new Response(stream).text();
+  }
+  return res.text();
+}
+
+// Poll until the report is ready or the deadline passes. Returns either the
+// text, or the reportId so the caller can resume rather than fail.
+export async function waitForReport(reportId, { deadlineMs = 120_000, intervalMs = 5_000 } = {}) {
+  const started = Date.now();
+  while (Date.now() - started < deadlineMs) {
+    const status = await reportStatus(reportId);
+    const state = status?.processingStatus;
+
+    if (state === "DONE") {
+      return { ready: true, text: await fetchReportDocument(status.reportDocumentId) };
+    }
+    // CANCELLED is Amazon's answer for "nothing matched", not a failure.
+    if (state === "CANCELLED") return { ready: true, text: "" };
+    if (state === "FATAL") {
+      throw new SpApiError(`Report ${reportId} failed with FATAL`, { body: status });
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return { ready: false, reportId };
+}
