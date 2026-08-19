@@ -2063,3 +2063,18 @@ label.pick .chip { flex-shrink: 0; }
 /* A table that outgrows its widget scrolls inside it — never pushes the
    grid wider, which would break every other widget's width. */
 .w .table-wrap { max-width: 100%; overflow-x: auto; }
+
+/* Inline checkbox filter, sized to sit in a .controls row beside the
+   search box and segmented toggles. */
+.controls .check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.controls .check input { margin: 0; cursor: pointer; }
+.controls .check:hover { color: var(--ink); }

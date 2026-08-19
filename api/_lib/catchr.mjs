@@ -166,6 +166,48 @@ export const SELLER_FIELDS = {
   ],
 };
 
+// Search terms — the words customers actually typed, per platform.
+//
+// The two connectors do not accept the same shape, and the difference is not
+// cosmetic:
+//
+// GOOGLE: date + Query and nothing else. Adding CampaignName, QueryMatchType
+// or KeywordTextMatchingQuery makes Catchr reject the whole request with
+// "invalid mapping" — Google's search-term view cannot be joined to the
+// keyword or campaign views through this connector. Verified field by field
+// on 2026-08-19. So Google rows carry a search term and metrics, no more.
+//
+// AMAZON: date + searchTerm + keyword + matchType + campaignName all
+// together, plus real click-attributed sales. Needs options_report, like
+// every other Amazon Ads request here.
+//
+// sales14d / purchases14d / unitsSoldClicks14d are Amazon's 14-day
+// CLICK-attributed figures, matching sales14d already used for campaign
+// ROAS elsewhere in this file. Google's Conversions/ConversionValue are
+// whatever its own tag is configured to count. The two are not comparable
+// and the tab must not add them together.
+export const GOOGLE_SEARCH_TERM_FIELDS = {
+  date: "_NORMALIZED_DATE_FIELD_YEAR_MONTH_DAY",
+  query: "Query",
+  metrics: ["Impressions", "Clicks", "Cost", "Conversions", "ConversionValue"],
+};
+
+export const AMAZON_SEARCH_TERM_FIELDS = {
+  date: "_NORMALIZED_DATE_FIELD_YEAR_MONTH_DAY",
+  searchTerm: "searchTerm",
+  keyword: "keyword",
+  matchType: "matchType",
+  campaignName: "campaignName",
+  metrics: [
+    "impressions",
+    "clicks",
+    "cost",
+    "sales14d",
+    "purchases14d",
+    "unitsSoldClicks14d",
+  ],
+};
+
 // Amazon's All Orders report, order by order.
 //
 // READ THIS BEFORE ASSUMING IT IS THE 2x BUG AGAIN. Migration 0018 moved

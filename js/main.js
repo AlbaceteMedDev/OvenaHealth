@@ -11,11 +11,12 @@ import { mountShopify } from "./tabs/shopify.js";
 import { mountSeo } from "./tabs/seo.js";
 import { mountMeta } from "./tabs/meta.js";
 import { mountGoogle } from "./tabs/google.js";
+import { mountKeywords } from "./tabs/keywords.js";
 import { mountInventory } from "./tabs/inventory.js";
 import { mountScan } from "./tabs/scan.js";
 import { mountMargins } from "./tabs/margins.js";
 
-const tabs = ["overview", "amazon", "shopify", "seo", "meta", "google", "inventory", "scan", "margins"];
+const tabs = ["overview", "amazon", "shopify", "seo", "meta", "google", "keywords", "inventory", "scan", "margins"];
 const mounts = {
   overview: mountOverview,
   amazon: mountAmazon,
@@ -23,6 +24,7 @@ const mounts = {
   seo: mountSeo,
   meta: mountMeta,
   google: mountGoogle,
+  keywords: mountKeywords,
   inventory: mountInventory,
   scan: mountScan,
   margins: mountMargins,

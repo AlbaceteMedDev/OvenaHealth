@@ -28,6 +28,10 @@
     {
       "path": "/api/sync/orders?days=90",
       "schedule": "40 6 * * *"
+    },
+    {
+      "path": "/api/sync/searchterms?days=30",
+      "schedule": "50 */6 * * *"
     }
   ],
   "functions": {

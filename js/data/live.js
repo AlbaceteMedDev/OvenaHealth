@@ -236,6 +236,75 @@ export function rollupSearch(rows, key) {
     .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions);
 }
 
+// Search terms, both ad platforms, one row per day per term.
+//
+// Ordered by cost because the question the tab answers is "what are we paying
+// for", and the tail is thousands of single-impression terms that cost
+// nothing. The cap is deliberately generous: 3,400 Google terms and 900
+// Amazon ones appear in a single month, so a low limit would silently hide
+// the long tail rather than the noise.
+export function fetchSearchTerms(days) {
+  return cached("searchTerms", { days }, () =>
+    run(
+      supabase
+        .from("ads_search_terms")
+        .select(
+          "date, platform, search_term, keyword, match_type, campaign_name, impressions, clicks, cost, sales, orders, units",
+        )
+        .gte("date", startDateFor(days))
+        .order("cost", { ascending: false })
+        .limit(8000),
+    ),
+  );
+}
+
+// Roll daily term rows up across the window. Everything here is a count or an
+// amount, so a plain sum is right — unlike Search Console's position, which
+// has to be re-weighted.
+//
+// Keyed on the term AND the platform. The same words are bought on both
+// platforms and merging them would add Amazon's 14-day click-attributed sales
+// to whatever Google's tag counted, producing a number that means nothing.
+export function rollupSearchTerms(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${r.platform}|${r.search_term}`;
+    const slot = map.get(key) || {
+      platform: r.platform,
+      searchTerm: r.search_term,
+      keywords: new Set(),
+      campaigns: new Set(),
+      matchTypes: new Set(),
+      impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0, units: 0,
+    };
+    if (r.keyword) slot.keywords.add(r.keyword);
+    if (r.campaign_name) slot.campaigns.add(r.campaign_name);
+    if (r.match_type) slot.matchTypes.add(r.match_type);
+    slot.impressions += r.impressions || 0;
+    slot.clicks += r.clicks || 0;
+    slot.cost += Number(r.cost) || 0;
+    slot.sales += Number(r.sales) || 0;
+    slot.orders += Number(r.orders) || 0;
+    slot.units += Number(r.units) || 0;
+    map.set(key, slot);
+  }
+  return [...map.values()]
+    .map((s) => ({
+      ...s,
+      keywords: [...s.keywords],
+      campaigns: [...s.campaigns],
+      matchTypes: [...s.matchTypes],
+      ctr: s.impressions > 0 ? s.clicks / s.impressions : 0,
+      cpc: s.clicks > 0 ? s.cost / s.clicks : 0,
+      // ACOS and ROAS are only meaningful where the platform attributes sales
+      // at all. Google currently reports zero conversions on every term, so
+      // these stay null there rather than rendering a confident 0.00x.
+      acos: s.sales > 0 ? s.cost / s.sales : null,
+      roas: s.cost > 0 && s.sales > 0 ? s.sales / s.cost : null,
+    }))
+    .sort((a, b) => b.cost - a.cost || b.clicks - a.clicks);
+}
+
 // GA4 acquisition. Deliberately kept alongside Shopify's own session data
 // rather than replacing it: the two count sessions differently and disagree
 // (425 against 510 over the same window), and hiding one behind the other
