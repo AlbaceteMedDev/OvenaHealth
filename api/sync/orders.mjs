@@ -31,6 +31,8 @@ import { upsert, select, deleteWhere, startRun, finishRun, loadSkuAliases } from
 import { skuAliases as staticAliases, skuMap, asinMap } from "../../js/data/inventory.js";
 import { DATA_START } from "../../js/config.js";
 import { authorized, UNAUTHORIZED } from "../_lib/auth.mjs";
+import { query as catchrQuery, SELLER_ORDER_FIELDS, toIsoStamp } from "../_lib/catchr.mjs";
+import { SELLER_ACCOUNTS } from "../_lib/accounts.mjs";
 
 // Amazon reports in Pacific time and exports timestamps in UTC. Bucketing a
 // UTC timestamp by its UTC date disagrees with Amazon on any day carrying an
@@ -233,6 +235,114 @@ export function deriveDailySales(orderRows, resolve, marketplaceId, stamp) {
   }));
 }
 
+// Pull the same order items from Catchr when SP-API has no credentials.
+//
+// This is the ONLY automated source available today: SPAPI_* is unset, and
+// without it the cron could do nothing but re-derive yesterday's rows. Amazon
+// sales sat frozen at 2026-08-16 for three days because of it, while the
+// account was taking 15 orders a day.
+//
+// It is not the Catchr path migration 0018 removed. That one asked for
+// aggregated Sales & Traffic metrics and got window totals silently
+// substituted for daily ones. These are order-level DIMENSIONS — one row per
+// order item with its own id, timestamp, SKU and quantity — so there is
+// nothing for Catchr to aggregate, and the rows are counted here by the same
+// code that reads Amazon's own TSV. See SELLER_ORDER_FIELDS.
+//
+// Returns the parseAllOrders shape so both sources feed one writer.
+async function fetchOrdersFromCatchr({ start, end, marketplaceId }) {
+  const F = SELLER_ORDER_FIELDS;
+  const dimensions = [
+    F.orderId, F.purchaseDate, F.sku, F.asin, F.title, F.quantity,
+    F.status, F.channel, F.salesChannel, F.shipLevel,
+    F.itemPrice, F.itemTax, F.currency,
+    F.shipCity, F.shipState, F.shipPostal, F.shipCountry,
+    F.isBusiness, F.promoIds,
+  ];
+
+  const stamp = new Date().toISOString();
+  const notes = [];
+  const rows = [];
+  const seen = new Map();
+  let undated = 0;
+
+  // Amazon's own order-item-id is not exposed on this endpoint. Order id +
+  // SKU is unique in practice because Amazon merges repeats of a SKU into one
+  // line; the occurrence counter is a backstop so a duplicate can never
+  // silently overwrite the line before it. Same rule as the TSV path.
+  const keyFor = (orderId, sku) => {
+    const base = `${orderId}::${sku || "-"}`;
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    return n === 1 ? base : `${base}::${n}`;
+  };
+
+  for (const account of SELLER_ACCOUNTS) {
+    const raw = await catchrQuery("amazon-seller", {
+      accounts: [{ id: account.id, authorization_id: account.authorization_id }],
+      date: "CUSTOM",
+      start_date: start,
+      end_date: end,
+      dimensions,
+      metrics: [],
+      max_rows: 50000,
+    });
+
+    for (const r of raw) {
+      const orderId = r[F.orderId];
+      const iso = toIsoStamp(r[F.purchaseDate]);
+      if (!orderId || !iso) {
+        if (orderId) undated += 1;
+        continue;
+      }
+      const day = pacificDay(iso);
+      if (!day) {
+        undated += 1;
+        continue;
+      }
+      const sku = r[F.sku] || null;
+      rows.push({
+        order_item_id: keyFor(orderId, sku),
+        amazon_order_id: orderId,
+        purchase_at: iso,
+        purchase_day: day,
+        order_status: r[F.status] || "Unknown",
+        fulfillment_channel: r[F.channel] || null,
+        sales_channel: r[F.salesChannel] || null,
+        ship_service_level: r[F.shipLevel] || null,
+        sku,
+        asin: r[F.asin] || null,
+        product_name: r[F.title] || null,
+        quantity: int(r[F.quantity]),
+        currency: r[F.currency] || account.currency || "USD",
+        item_price: money(r[F.itemPrice]),
+        item_tax: money(r[F.itemTax]),
+        // Not exposed per item on this endpoint. 0 here means NOT REPORTED,
+        // exactly as it does when the TSV omits the column.
+        shipping_price: 0,
+        shipping_tax: 0,
+        item_promo_discount: 0,
+        ship_promo_discount: 0,
+        ship_city: r[F.shipCity] || null,
+        ship_state: r[F.shipState] || null,
+        ship_postal_code: r[F.shipPostal] || null,
+        ship_country: r[F.shipCountry] || null,
+        is_business_order: /^(true|yes|1)$/i.test(String(r[F.isBusiness] ?? "")),
+        promotion_ids: r[F.promoIds] || null,
+        synced_at: stamp,
+      });
+    }
+  }
+
+  if (undated) notes.push(`${undated} Catchr row(s) had an unreadable purchase date and were skipped`);
+  notes.push(
+    "Orders came from Catchr's order endpoint, not SP-API. Per-item shipping and " +
+    "promotion amounts are not exposed there and read 0. Set SPAPI_CLIENT_ID / " +
+    "SPAPI_CLIENT_SECRET / SPAPI_REFRESH_TOKEN for the full report.",
+  );
+  return { rows, notes, stamp, marketplaceId };
+}
+
 function makeResolver(dbAliases) {
   return function resolve(amazonSku, asin) {
     if (amazonSku && skuMap.has(amazonSku)) return amazonSku;
@@ -273,6 +383,7 @@ export default async function handler(req, res) {
   let source = null;
   let preloaded = null;
   let sourceNote = null;
+  let preparsed = null;
 
   try {
     if (rebuild) {
@@ -322,15 +433,28 @@ export default async function handler(req, res) {
       // items already stored — always possible, idempotent, and it keeps the
       // sales table consistent with amz_orders. It brings in no NEW orders,
       // which the note says plainly rather than letting a 200 imply freshness.
-      source = "amz_orders (no report source)";
-      sourceNote =
-        "No SP-API credentials and no uploaded report — re-derived from stored orders only. " +
-        "NO NEW ORDERS were imported. Set SPAPI_CLIENT_ID / SPAPI_CLIENT_SECRET / " +
-        "SPAPI_REFRESH_TOKEN, or POST the All Orders TSV to this endpoint.";
-      preloaded = await select(
-        "amz_orders",
-        `select=purchase_day,sku,asin,product_name,quantity,item_price,currency,order_status&purchase_day=gte.${start}&limit=50000`,
-      );
+      // Catchr carries the same order items and is already authorised, so it
+      // is tried before giving up. Only if it fails does this fall back to
+      // re-deriving from stored orders, which imports nothing new.
+      try {
+        source = "catchr";
+        preparsed = await fetchOrdersFromCatchr({ start, end, marketplaceId: MARKETPLACE_ID });
+        if (!preparsed.rows.length) {
+          preparsed = null;
+          throw new Error("Catchr returned no order rows for this window");
+        }
+      } catch (err) {
+        preparsed = null;
+        source = "amz_orders (no report source)";
+        sourceNote =
+          `No SP-API credentials, no uploaded report, and Catchr did not return orders (${err.message}) — ` +
+          "re-derived from stored orders only. NO NEW ORDERS were imported. Set SPAPI_CLIENT_ID / " +
+          "SPAPI_CLIENT_SECRET / SPAPI_REFRESH_TOKEN, or POST the All Orders TSV to this endpoint.";
+        preloaded = await select(
+          "amz_orders",
+          `select=purchase_day,sku,asin,product_name,quantity,item_price,currency,order_status&purchase_day=gte.${start}&limit=50000`,
+        );
+      }
     }
   } catch (err) {
     res.status(502).json({ ok: false, error: err.message });
@@ -340,9 +464,11 @@ export default async function handler(req, res) {
   const runId = dry ? null : await startRun("orders");
 
   try {
-    const parsed = preloaded
-      ? { rows: preloaded, notes: [`Re-derived from ${preloaded.length} stored order item(s)`] }
-      : parseAllOrders(tsv);
+    const parsed = preparsed
+      ? preparsed
+      : preloaded
+        ? { rows: preloaded, notes: [`Re-derived from ${preloaded.length} stored order item(s)`] }
+        : parseAllOrders(tsv);
     const { rows, notes } = parsed;
     if (sourceNote) notes.unshift(sourceNote);
     const stamp = parsed.stamp || new Date().toISOString();

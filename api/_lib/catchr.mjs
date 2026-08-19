@@ -166,6 +166,57 @@ export const SELLER_FIELDS = {
   ],
 };
 
+// Amazon's All Orders report, order by order.
+//
+// READ THIS BEFORE ASSUMING IT IS THE 2x BUG AGAIN. Migration 0018 moved
+// Amazon SALES off Catchr because the Sales & Traffic report silently drops
+// the date dimension once a product dimension is added and returns window
+// totals — 238 units against Amazon's real 125.
+//
+// This is a different report and a different failure mode, because there is
+// no aggregation to corrupt. Every field here is a DIMENSION on the order
+// endpoint: one row per order ITEM, carrying its own Amazon order id,
+// purchase timestamp, SKU and quantity. Catchr sums nothing, so no window
+// total can leak in. The rows are bucketed and totalled by exactly the same
+// code that reads the SP-API TSV.
+//
+// Verified against Seller Central on 2026-08-19: 15 distinct orders on
+// 2026-08-18 Pacific, matching what the account reported for that day.
+//
+// PurchaseDate arrives as compact UTC — "20260819041811" — not ISO.
+export const SELLER_ORDER_FIELDS = {
+  orderId: "order.AmazonOrderId",
+  purchaseDate: "order.PurchaseDate",
+  sku: "order.sku",
+  asin: "order.asin",
+  title: "order.ProductName",
+  quantity: "order.quantity",
+  status: "order.OrderStatus",
+  channel: "order.FulfillmentChannel",
+  salesChannel: "order.SalesChannel",
+  shipLevel: "order.ShipServiceLevel",
+  itemPrice: "order.OrderItemPrice",
+  itemTax: "order.OrderItemTax",
+  currency: "order.currency",
+  shipCity: "order.OrderShipCity",
+  shipState: "order.OrderShipState",
+  shipPostal: "order.OrderShipPostalCode",
+  shipCountry: "order.OrderShipCountry",
+  isBusiness: "order.OrderIsBusinessOrder",
+  promoIds: "order.OrderPromotionIds",
+};
+
+// Catchr timestamps on the order endpoint are compact UTC, "YYYYMMDDHHMMSS".
+// new Date() cannot parse that form — it yields Invalid Date, which would
+// silently drop every order row.
+export function toIsoStamp(compact) {
+  const s = String(compact ?? "").trim();
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(s);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 // Google Search Console. The only source for what people actually typed:
 // Shopify collapses every organic visit into one "search" bucket.
 //
