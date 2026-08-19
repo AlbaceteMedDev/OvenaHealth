@@ -266,15 +266,48 @@ async function fetchOrdersFromCatchr({ start, end, marketplaceId }) {
   const seen = new Map();
   let undated = 0;
 
-  // Amazon's own order-item-id is not exposed on this endpoint. Order id +
-  // SKU is unique in practice because Amazon merges repeats of a SKU into one
-  // line; the occurrence counter is a backstop so a duplicate can never
-  // silently overwrite the line before it. Same rule as the TSV path.
+  // Amazon's own order-item-id is not exposed on this endpoint, so a natural
+  // key stands in for it: order id + SKU, which is unique in practice because
+  // Amazon merges repeats of a SKU into one line. The occurrence counter is a
+  // backstop so a duplicate can never silently overwrite the line before it.
+  //
+  // But amz_orders is keyed on order_item_id, and rows already loaded from
+  // Amazon's own TSV carry the REAL id — so synthesising unconditionally
+  // inserts a second copy of an item that is already there rather than
+  // updating it. That is exactly what happened on the first run: every day the
+  // hand-load already covered came back double.
+  //
+  // So the existing rows for this window are read first and their ids reused
+  // wherever the natural key matches. A day only Catchr has ever seen gets the
+  // synthesised id; a day Amazon's report loaded keeps Amazon's.
+  const existing = await select(
+    "amz_orders",
+    `select=order_item_id,amazon_order_id,sku&purchase_day=gte.${start}&limit=50000`,
+  );
+  const existingSeen = new Map();
+  const existingByNatural = new Map();
+  for (const r of existing) {
+    const base = `${r.amazon_order_id}::${r.sku || "-"}`;
+    const n = (existingSeen.get(base) || 0) + 1;
+    existingSeen.set(base, n);
+    const natural = n === 1 ? base : `${base}::${n}`;
+    // A real numeric id wins over a previously synthesised one for the same
+    // item, so the richer row is the one that survives.
+    const prior = existingByNatural.get(natural);
+    if (!prior || (prior.includes("::") && !r.order_item_id.includes("::"))) {
+      existingByNatural.set(natural, r.order_item_id);
+    }
+  }
+
+  const usedIds = new Set();
   const keyFor = (orderId, sku) => {
     const base = `${orderId}::${sku || "-"}`;
     const n = (seen.get(base) || 0) + 1;
     seen.set(base, n);
-    return n === 1 ? base : `${base}::${n}`;
+    const natural = n === 1 ? base : `${base}::${n}`;
+    const id = existingByNatural.get(natural) || natural;
+    usedIds.add(id);
+    return id;
   };
 
   for (const account of SELLER_ACCOUNTS) {
@@ -317,12 +350,12 @@ async function fetchOrdersFromCatchr({ start, end, marketplaceId }) {
         currency: r[F.currency] || account.currency || "USD",
         item_price: money(r[F.itemPrice]),
         item_tax: money(r[F.itemTax]),
-        // Not exposed per item on this endpoint. 0 here means NOT REPORTED,
-        // exactly as it does when the TSV omits the column.
-        shipping_price: 0,
-        shipping_tax: 0,
-        item_promo_discount: 0,
-        ship_promo_discount: 0,
+        // shipping_* and *_promo_discount are deliberately ABSENT, not zero.
+        // Catchr's order endpoint does not expose them, and PostgREST writes
+        // only the columns present in the payload — so a row Amazon's report
+        // already filled keeps its real figures instead of being flattened to
+        // 0 by a Catchr refresh, while a brand-new row takes the column
+        // default. Sending 0 here wiped a real $2.25 promotion on the first run.
         ship_city: r[F.shipCity] || null,
         ship_state: r[F.shipState] || null,
         ship_postal_code: r[F.shipPostal] || null,
@@ -340,7 +373,18 @@ async function fetchOrdersFromCatchr({ start, end, marketplaceId }) {
     "promotion amounts are not exposed there and read 0. Set SPAPI_CLIENT_ID / " +
     "SPAPI_CLIENT_SECRET / SPAPI_REFRESH_TOKEN for the full report.",
   );
-  return { rows, notes, stamp, marketplaceId };
+  // Anything in the window that this fetch did not claim is a leftover — the
+  // duplicate half of a row that was inserted under a synthesised id before
+  // the reuse above existed. Handed back so the caller can prune it inside
+  // the same run rather than leaving the table double.
+  const orphanIds = existing
+    .map((r) => r.order_item_id)
+    .filter((id) => !usedIds.has(id));
+  if (orphanIds.length) {
+    notes.push(`${orphanIds.length} superseded order row(s) removed`);
+  }
+
+  return { rows, notes, stamp, marketplaceId, orphanIds };
 }
 
 function makeResolver(dbAliases) {
@@ -495,7 +539,17 @@ export default async function handler(req, res) {
     let written = 0;
     if (!dry) {
       // Nothing new to store on a rebuild — the order items came FROM the table.
-      if (!preloaded) written += await upsert("amz_orders", rows, "order_item_id");
+      if (!preloaded) {
+        written += await upsert("amz_orders", rows, "order_item_id");
+        // Prune the superseded duplicates AFTER the upsert, so a failure
+        // midway leaves the table with too many rows rather than too few.
+        const orphans = parsed.orphanIds || [];
+        for (let i = 0; i < orphans.length; i += 100) {
+          const batch = orphans.slice(i, i + 100)
+            .map((id) => `"${id.replace(/"/g, '""')}"`).join(",");
+          await deleteWhere("amz_orders", `order_item_id=in.(${encodeURIComponent(batch)})`);
+        }
+      }
 
       // Rebuild rather than upsert: the report is authoritative for the days
       // it covers, so a row left over from an earlier import is one Amazon no
