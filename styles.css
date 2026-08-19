@@ -1661,7 +1661,33 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   background: var(--accent-soft);
   min-height: 48px;
   pointer-events: none;
+  /* Sits over the widget it is proposing to displace, not behind it. */
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+/* What the drop will do, before the mouse is released: land in free space,
+   trade places with one widget, or push several down. */
+.w-ghost.is-free { border-color: var(--ok); background: rgba(4, 120, 87, 0.10); }
+.w-ghost.is-swap { border-color: var(--watch); background: rgba(180, 83, 9, 0.12); }
+.w-ghost.is-push { border-color: var(--low); background: rgba(185, 28, 28, 0.10); }
+.w-ghost-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+}
+.w-ghost.is-free .w-ghost-label { color: var(--ok); }
+.w-ghost.is-swap .w-ghost-label { color: var(--watch); }
+.w-ghost.is-push .w-ghost-label { color: var(--low); }
+/* The widgets that would be displaced, named on the page rather than only in
+   the ghost's label. */
+.w.is-blocked { outline: 2px dashed var(--watch); outline-offset: 3px; border-radius: var(--radius-lg); }
 .w {
   position: relative;
   min-width: 0;

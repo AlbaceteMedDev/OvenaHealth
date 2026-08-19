@@ -46,6 +46,96 @@ export const SPANS = [
   { w: 12, label: "Full" },
 ];
 
+// ─── Placement ───────────────────────────────────────────────────────
+//
+// Layout items are { id, w, x, y }: a column span plus an explicit cell on a
+// 12-column grid. Explicit placement is what lets a widget sit anywhere,
+// gaps included — but it also means CSS grid will cheerfully render two
+// widgets on top of each other, so every mutation has to be checked.
+// Exported for the placement tests.
+
+// Every widget occupies exactly one grid row, so two items overlap when they
+// share a row and their column ranges intersect.
+export function overlaps(a, b) {
+  return a.y === b.y && a.x < b.x + b.w && b.x < a.x + a.w;
+}
+
+// First cell at or after startY where a widget of this width touches nothing.
+// Scans left to right, top to bottom, so it fills a gap before opening a new
+// row — a dashboard with a hole in it gets the hole used, not a fresh row.
+export function findFreeCell(taken, w, startY = 0) {
+  for (let y = startY; y < startY + 500; y++) {
+    for (let x = 0; x <= COLS - w; x++) {
+      if (!taken.some((it) => overlaps({ x, y, w }, it))) return { x, y };
+    }
+  }
+  return { x: 0, y: startY };
+}
+
+// Force a set of items into a non-overlapping arrangement, in reading order.
+// `anchor` is settled first and never moves — after a drop, the widget the
+// user just placed is the one thing that must stay exactly where it was put.
+export function settle(items, anchor = null) {
+  const clamp = (it) => {
+    it.w = Math.max(1, Math.min(COLS, Number(it.w) || 1));
+    it.x = Math.max(0, Math.min(COLS - it.w, Number.isInteger(it.x) ? it.x : 0));
+    it.y = Math.max(0, Number.isInteger(it.y) ? it.y : 0);
+  };
+  const taken = [];
+  if (anchor) { clamp(anchor); taken.push(anchor); }
+  const rest = items
+    .filter((it) => it !== anchor)
+    .sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+  for (const it of rest) {
+    clamp(it);
+    if (taken.some((t) => overlaps(it, t))) {
+      const cell = findFreeCell(taken, it.w, it.y);
+      it.x = cell.x; it.y = cell.y;
+    }
+    taken.push(it);
+  }
+  return items;
+}
+
+// Items saved before placement existed have no x/y, and newly added widgets
+// start without one. Both get the first free cell rather than defaulting to
+// 0,0 — which is what stacked every added widget onto the top-left corner.
+// Placed items keep their cell; settle then guarantees nothing overlaps.
+export function autoPlace(items) {
+  const taken = items.filter((it) => Number.isInteger(it.x) && Number.isInteger(it.y));
+  for (const it of items) {
+    if (Number.isInteger(it.x) && Number.isInteger(it.y)) continue;
+    const cell = findFreeCell(taken, it.w, 0);
+    it.x = cell.x; it.y = cell.y;
+    taken.push(it);
+  }
+  return settle(items);
+}
+
+// Row boundaries in client coordinates. Columns divide evenly; rows do not,
+// because each sizes to its tallest widget — so they are read back from the
+// resolved template rather than assumed.
+function measureRows(grid) {
+  const r = grid.getBoundingClientRect();
+  const cs = getComputedStyle(grid);
+  const rowGap = parseFloat(cs.rowGap) || 0;
+  const heights = cs.gridTemplateRows.split(" ")
+    .map(parseFloat).filter((n) => !Number.isNaN(n));
+  const rows = [];
+  let top = r.top;
+  for (const h of heights) { rows.push({ top, bottom: top + h }); top += h + rowGap; }
+  return rows;
+}
+
+// Disarm the drag grip however the gesture ends, wherever it ends. Registered
+// once for the module rather than per paint, which used to add a fresh
+// {once:true} listener on every repaint and leave the grip armed after the
+// first mouseup consumed one of them.
+let dragAllowed = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("mouseup", () => { dragAllowed = false; });
+}
+
 export function makeDashboard(cfg) {
   const P = cfg.prefix;
   const CATALOG = WIDGETS.filter((w) => cfg.groups.includes(w.group));
@@ -90,20 +180,7 @@ const defaultSpan = (id) => {
 // 12-column grid. x/y are what let a widget sit anywhere — including with a
 // gap beside it — rather than being packed against its neighbour.
 //
-// Items saved before placement existed have no x/y. Rather than discard them,
-// autoFlow lays them out exactly the way the packing grid used to, so an
-// existing dashboard opens looking identical and only moves when dragged.
-function autoFlow(items) {
-  let x = 0, y = 0;
-  for (const it of items) {
-    if (Number.isInteger(it.x) && Number.isInteger(it.y)) continue;
-    if (x + it.w > COLS) { x = 0; y += 1; }
-    it.x = x; it.y = y;
-    x += it.w;
-    if (x >= COLS) { x = 0; y += 1; }
-  }
-  return items;
-}
+// Placement lives at module scope — see overlaps / settle / autoPlace above.
 
 // Ids this scope is allowed to place. A saved layout is filtered against
 // THIS, not the global widget map — otherwise a layout saved while a group
@@ -127,11 +204,11 @@ function normalize(saved) {
     const y = Number.isInteger(yr) && yr >= 0 ? yr : null;
     out.push({ id, w, x, y });
   }
-  return out.length ? autoFlow(out) : null;
+  return out.length ? autoPlace(out) : null;
 }
 
 const defaultLayout = () =>
-  autoFlow(cfg.defaultLayout.map((id) => ({ id, w: defaultSpan(id), x: null, y: null })));
+  autoPlace(cfg.defaultLayout.map((id) => ({ id, w: defaultSpan(id), x: null, y: null })));
 
 async function loadLayout() {
   const { data, error } = await supabase
@@ -534,7 +611,7 @@ function rebuildInventory() {
     // Which lines have no rate on file, so the P&L can say "not recorded"
     // instead of showing a $0.00 cost that reads as a fact.
     unset: [
-      outbound === 0 && shopUnits > 0 ? "outbound shipping" : null,
+      outbound === 0 && (shopShipments + amzShipments) > 0 ? "outbound shipping" : null,
       payment === 0 && (ctx.shopT.orders || 0) > 0 ? "payment processing" : null,
       storage === 0 ? "FBA storage" : null,
     ].filter(Boolean),
@@ -608,21 +685,42 @@ function paint() {
       layout.splice(Number(b.dataset.remove), 1);
       void saveLayout(); paint();
     }));
+  // Swaps the two cells as well as the two array slots. Swapping array order
+  // alone did nothing visible: widgets render from their own x/y, so the
+  // buttons moved a widget's index and left it sitting where it was. Order
+  // still has to swap too — below 1180px placement is off and the grid falls
+  // back to flowing in DOM order.
   body.querySelectorAll("[data-move]").forEach((b) =>
     b.addEventListener("click", () => {
       const i = Number(b.dataset.i);
       const j = b.dataset.move === "up" ? i - 1 : i + 1;
       if (j < 0 || j >= layout.length) return;
+      const a = layout[i], c = layout[j];
+      const ax = a.x, ay = a.y;
+      a.x = c.x; a.y = c.y;
+      c.x = ax; c.y = ay;
       [layout[i], layout[j]] = [layout[j], layout[i]];
+      settle(layout);
       void saveLayout(); paint();
     }));
+  // Widening pushes a widget's right edge past its neighbour, or past column
+  // 12 entirely. Clamp x to keep the whole footprint on the grid, then let
+  // settle move whatever the new width now sits on top of.
   body.querySelectorAll("[data-setspan]").forEach((b) =>
     b.addEventListener("click", () => {
-      layout[Number(b.dataset.i)].w = Number(b.dataset.setspan);
+      const it = layout[Number(b.dataset.i)];
+      it.w = Number(b.dataset.setspan);
+      it.x = Math.max(0, Math.min(COLS - it.w, it.x ?? 0));
+      settle(layout, it);
       void saveLayout(); paint();
     }));
 
-  if (editing) wireDragDrop(body);
+  // The grid element, not the body that wraps it. Handing this the body was
+  // the whole bug: getComputedStyle on a non-grid reports gridTemplateRows
+  // "none", so every drop resolved to row 0 and every widget landed on top of
+  // the first one — and the ghost, appended outside the grid, had no cell to
+  // sit in and rendered as a bar under the dashboard.
+  if (editing) wireDragDrop(body.querySelector(".w-grid"));
 
   drawAll();
 }
@@ -688,7 +786,13 @@ function paintEditBar() {
   bar.querySelector(`#${P}PickNone`)?.addEventListener("click", () => { selected.clear(); paintEditBar(); });
   bar.querySelector(`#${P}AddSel`)?.addEventListener("click", () => {
     // Catalogue order, not tick order, so a bulk add lands in a sane sequence.
-    for (const w of CATALOG) if (selected.has(w.id)) layout.push({ id: w.id, w: defaultSpan(w.id) });
+    // x/y are left null and resolved by autoPlace: added widgets used to carry
+    // no cell at all, so every one of them rendered at column 1 row 1, stacked
+    // on the first widget and on each other.
+    for (const w of CATALOG) {
+      if (selected.has(w.id)) layout.push({ id: w.id, w: defaultSpan(w.id), x: null, y: null });
+    }
+    autoPlace(layout);
     selected.clear(); picking = false;
     void saveLayout(); paint();
   });
@@ -702,127 +806,148 @@ function paintEditBar() {
 // unusable by keyboard, and this is the only way to reorder.
 
 let dragFrom = null;
-let dragAllowed = false;
+let dragRows = null;   // row boundaries measured once per drag, see dragstart
 
-function clearDropMarks(root) {
-  root.querySelectorAll(".drop-before, .drop-after")
-    .forEach((n) => n.classList.remove("drop-before", "drop-after"));
-}
-
-function wireDragDrop(root) {
-  root.querySelectorAll(".w-grip").forEach((g) => {
+function wireDragDrop(grid) {
+  if (!grid) return;
+  grid.querySelectorAll(".w-grip").forEach((g) => {
     const arm = () => { dragAllowed = true; };
     g.addEventListener("mousedown", arm);
     g.addEventListener("touchstart", arm, { passive: true });
   });
-  // Disarm however the gesture ends, or the next click-drag anywhere would
-  // be treated as an authorised reorder.
-  window.addEventListener("mouseup", () => { dragAllowed = false; }, { once: true });
 
-  root.querySelectorAll(".w").forEach((el) => {
+  grid.querySelectorAll(".w").forEach((el) => {
     el.addEventListener("dragstart", (e) => {
       if (!dragAllowed) { e.preventDefault(); return; }
       dragFrom = Number(el.dataset.i);
       el.classList.add("is-dragging");
+      // Row heights are read once, here. Measuring them per dragover would
+      // feed back on itself: the ghost is a grid child, so as soon as it
+      // opens a new row the next measurement includes that row and the
+      // target cell jitters under the cursor. Nothing moves mid-drag, so one
+      // measurement stays correct for the whole gesture.
+      dragRows = measureRows(grid);
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/plain", String(dragFrom));   // Firefox needs a payload
     });
 
     el.addEventListener("dragend", () => {
-      dragFrom = null; dragAllowed = false;
+      dragFrom = null; dragAllowed = false; dragRows = null;
       el.classList.remove("is-dragging");
-      clearDropMarks(root);
-    });
-
-    el.addEventListener("dragover", (e) => {
-      if (dragFrom === null) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
+      clearGhost(grid);
     });
   });
 
   // The grid itself takes the drop, not just the widgets, so a widget can be
   // dropped into empty space and simply stay there. That is what allows gaps:
   // nothing reflows to close them.
-  root.addEventListener("dragover", (e) => {
+  grid.addEventListener("dragover", (e) => {
     if (dragFrom === null) return;
     e.preventDefault();
-    const cell = cellFromPoint(root, e.clientX, e.clientY);
-    if (cell) showGhost(root, cell, layout[dragFrom].w);
+    e.dataTransfer.dropEffect = "move";
+    const target = targetFromPoint(grid, e.clientX, e.clientY);
+    showGhost(grid, target, blockedBy(target));
   });
-  root.addEventListener("dragleave", (e) => {
-    if (!root.contains(e.relatedTarget)) clearGhost(root);
+  grid.addEventListener("dragleave", (e) => {
+    if (!grid.contains(e.relatedTarget)) clearGhost(grid);
   });
-  root.addEventListener("drop", (e) => {
+  grid.addEventListener("drop", (e) => {
     if (dragFrom === null) return;
     e.preventDefault();
-    clearGhost(root);
-    const cell = cellFromPoint(root, e.clientX, e.clientY);
-    if (!cell) { dragFrom = null; dragAllowed = false; return; }
+    clearGhost(grid);
 
     const moving = layout[dragFrom];
+    const target = targetFromPoint(grid, e.clientX, e.clientY);
     const from = { x: moving.x, y: moving.y };
-    const x = Math.max(0, Math.min(COLS - moving.w, cell.col));
-    const y = Math.max(0, cell.row);
+    const hit = blockedBy(target);
 
-    // Anything whose footprint the drop lands on trades places with the
-    // widget being moved, rather than the drop being refused. One occupant
-    // swaps; several are pushed down a row, because there is no sensible
-    // single partner to swap with.
-    const hit = layout.filter((it, i) =>
-      i !== dragFrom && it.y === y && x < it.x + it.w && it.x < x + moving.w);
+    moving.x = target.x;
+    moving.y = target.y;
 
-    moving.x = x;
-    moving.y = y;
-    if (hit.length === 1) {
-      hit[0].x = Math.max(0, Math.min(COLS - hit[0].w, from.x ?? 0));
-      hit[0].y = from.y ?? 0;
+    // One occupant trades places with the widget being moved. Several are
+    // pushed down, because there is no sensible single partner to swap with.
+    // settle() then resolves whatever those moves landed on in turn, with the
+    // dropped widget anchored so it keeps the cell the user chose.
+    if (hit.length === 1 && Number.isInteger(from.x)) {
+      hit[0].x = Math.max(0, Math.min(COLS - hit[0].w, from.x));
+      hit[0].y = from.y;
     } else {
       for (const it of hit) it.y += 1;
     }
+    settle(layout, moving);
 
     dragFrom = null;
     dragAllowed = false;
+    dragRows = null;
     void saveLayout();
     paint();
   });
 }
 
-// Which grid cell a pointer is over. Columns divide evenly; rows do not,
-// because each sizes to its tallest widget — so row boundaries are read back
-// from the resolved template rather than assumed.
-function cellFromPoint(grid, clientX, clientY) {
+// The cell a pointer is over, as a full footprint {x, y, w} for the widget
+// being dragged — already clamped so the whole widget stays on the grid.
+// Pointing below the last row yields a new row, which is how the dashboard
+// gets extended downward.
+function targetFromPoint(grid, clientX, clientY) {
+  const w = layout[dragFrom].w;
   const r = grid.getBoundingClientRect();
   const cs = getComputedStyle(grid);
   const gap = parseFloat(cs.columnGap) || 0;
   const colW = (r.width - gap * (COLS - 1)) / COLS;
-  const col = Math.max(0, Math.min(COLS - 1, Math.floor((clientX - r.left) / (colW + gap))));
 
-  const rowGap = parseFloat(cs.rowGap) || 0;
-  const rows = cs.gridTemplateRows.split(" ").map(parseFloat).filter((n) => !Number.isNaN(n));
-  let y = r.top, row = 0;
+  // Aim at the cursor's own column, then pull the footprint back on-grid, so
+  // a full-width widget dropped on the right still lands at column 0 rather
+  // than being refused.
+  const col = Math.floor((clientX - r.left) / (colW + gap));
+  const x = Math.max(0, Math.min(COLS - w, Number.isFinite(col) ? col : 0));
+
+  const rows = dragRows || measureRows(grid);
+  let y = rows.length;
   for (let i = 0; i < rows.length; i++) {
-    if (clientY < y + rows[i] + rowGap / 2) { row = i; break; }
-    y += rows[i] + rowGap;
-    row = i + 1;
+    if (clientY < rows[i].bottom) { y = i; break; }
   }
-  return { col, row };
+  return { x, y: Math.max(0, y), w };
 }
 
-function showGhost(grid, cell, w) {
+// Which placed widgets the proposed footprint would land on.
+function blockedBy(target) {
+  return layout.filter((it, i) => i !== dragFrom && overlaps(target, it));
+}
+
+// The drop preview. Colour and label say what the drop will actually do —
+// land in free space, trade places with one widget, or push several down —
+// so the outcome is known before the mouse is released rather than after.
+function showGhost(grid, target, blocked) {
   let g = grid.querySelector(".w-ghost");
   if (!g) {
     g = document.createElement("div");
-    g.className = "w-ghost";
+    g.innerHTML = '<span class="w-ghost-label"></span>';
     grid.appendChild(g);
   }
-  g.style.setProperty("--col", Math.max(0, Math.min(COLS - w, cell.col)) + 1);
-  g.style.setProperty("--row", cell.row + 1);
-  g.style.setProperty("--span", w);
+  g.style.setProperty("--col", target.x + 1);
+  g.style.setProperty("--row", target.y + 1);
+  g.style.setProperty("--span", target.w);
+
+  const state = blocked.length === 0 ? "is-free" : blocked.length === 1 ? "is-swap" : "is-push";
+  g.className = `w-ghost ${state}`;
+  g.querySelector(".w-ghost-label").textContent =
+    blocked.length === 0
+      ? "Fits here"
+      : blocked.length === 1
+        ? `Swaps with ${WIDGET_MAP.get(blocked[0].id)?.title || "widget"}`
+        : `Pushes ${blocked.length} widgets down`;
+
+  // Outline exactly what is in the way, so a "swap" names its partner on the
+  // page instead of only in the label.
+  grid.querySelectorAll(".w.is-blocked").forEach((n) => n.classList.remove("is-blocked"));
+  for (const it of blocked) {
+    grid.querySelector(`.w[data-i="${layout.indexOf(it)}"]`)?.classList.add("is-blocked");
+  }
 }
 
 function clearGhost(grid) {
   grid.querySelector(".w-ghost")?.remove();
+  grid.querySelectorAll(".w.is-blocked").forEach((n) => n.classList.remove("is-blocked"));
 }
 
 function drawAll() {
