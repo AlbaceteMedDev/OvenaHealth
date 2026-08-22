@@ -20,14 +20,33 @@ import { select } from "./_lib/db.mjs";
 import { authorized } from "./_lib/auth.mjs";
 import { SELLER_ACCOUNTS, AMAZON_ADS_ACCOUNTS, FACEBOOK_ADS_ACCOUNTS, GOOGLE_ADS_ACCOUNTS } from "./_lib/accounts.mjs";
 import { isConfigured as spapiConfigured } from "./_lib/spapi.mjs";
+import { isConfigured as shopifyConfigured } from "./_lib/shopify.mjs";
 
 // Without these the sync cannot run at all.
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "CATCHR_API_KEY", "CRON_SECRET"];
 
 // Each of these unlocks one tab; absence degrades rather than breaks.
+//
+// `configured` is the verdict; the per-variable booleans are the worksheet.
+// They answer different questions, and reading the worksheet as the verdict
+// is actively misleading for Shopify: the sync accepts EITHER a long-lived
+// SHOPIFY_ADMIN_TOKEN or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET to mint
+// one per run. Minting is the durable choice — a token pasted from the
+// client_credentials grant dies after 24h and then 401s on every run — so a
+// correctly configured store reports SHOPIFY_ADMIN_TOKEN: false on purpose.
+// Publishing only the flat list made that healthy state read as a fault.
+//
+// Each `configured` delegates to the very predicate its sync gates on, so
+// this endpoint cannot drift from what the sync actually does.
 const OPTIONAL = {
-  shopify: ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_ADMIN_TOKEN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET"],
-  fbaInventory: ["SPAPI_CLIENT_ID", "SPAPI_CLIENT_SECRET", "SPAPI_REFRESH_TOKEN"],
+  shopify: {
+    vars: ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_ADMIN_TOKEN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET"],
+    configured: shopifyConfigured,
+  },
+  fbaInventory: {
+    vars: ["SPAPI_CLIENT_ID", "SPAPI_CLIENT_SECRET", "SPAPI_REFRESH_TOKEN"],
+    configured: spapiConfigured,
+  },
 };
 
 const isSet = (name) => Boolean(process.env[name]);
@@ -40,9 +59,12 @@ export default async function handler(req, res) {
     missing,
     required: Object.fromEntries(REQUIRED.map((name) => [name, isSet(name)])),
     optional: Object.fromEntries(
-      Object.entries(OPTIONAL).map(([feature, names]) => [
+      Object.entries(OPTIONAL).map(([feature, { vars, configured }]) => [
         feature,
-        Object.fromEntries(names.map((name) => [name, isSet(name)])),
+        {
+          configured: configured(),
+          ...Object.fromEntries(vars.map((name) => [name, isSet(name)])),
+        },
       ]),
     ),
     defaults: {
