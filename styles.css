@@ -1655,7 +1655,7 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
 
 .w-ghost {
   grid-column: var(--col) / span var(--span);
-  grid-row: var(--row);
+  grid-row: var(--row) / span var(--rowspan, 1);
   border: 2px dashed var(--accent);
   border-radius: var(--radius-lg);
   background: var(--accent-soft);
@@ -1694,7 +1694,12 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
   /* Explicit cell, so a widget stays where it was put — including with empty
      space beside it. Auto-placement would close every gap. */
   grid-column: var(--col, auto) / span var(--span, 6);
-  grid-row: var(--row, auto);
+  grid-row: var(--row, auto) / span var(--rowspan, 1);
+  /* Fill the rows the widget claims. Left at the grid's `start`, a widget was
+     only ever as tall as its own content, so a short tile beside a tall chart
+     sat above a band of dead space and a 2-row widget did not actually use
+     its second row. */
+  align-self: stretch;
 }
 /* Below these widths a 12-column grid stops being readable, so spans
    collapse regardless of what the saved layout asked for. Anything already

@@ -35,82 +35,12 @@ import {
 } from "./ui.js";
 import { WIDGETS, WIDGET_MAP } from "./widgets.js";
 
-const COLS = 12;
+import {
+  COLS, SPANS, HEIGHTS, overlaps, findFreeCell, settle, autoPlace,
+} from "./placement.js";
 
-// Column spans offered in edit mode, out of a 12-column grid.
-export const SPANS = [
-  { w: 3, label: "¼" },
-  { w: 4, label: "⅓" },
-  { w: 6, label: "½" },
-  { w: 8, label: "⅔" },
-  { w: 12, label: "Full" },
-];
-
-// ─── Placement ───────────────────────────────────────────────────────
-//
-// Layout items are { id, w, x, y }: a column span plus an explicit cell on a
-// 12-column grid. Explicit placement is what lets a widget sit anywhere,
-// gaps included — but it also means CSS grid will cheerfully render two
-// widgets on top of each other, so every mutation has to be checked.
-// Exported for the placement tests.
-
-// Every widget occupies exactly one grid row, so two items overlap when they
-// share a row and their column ranges intersect.
-export function overlaps(a, b) {
-  return a.y === b.y && a.x < b.x + b.w && b.x < a.x + a.w;
-}
-
-// First cell at or after startY where a widget of this width touches nothing.
-// Scans left to right, top to bottom, so it fills a gap before opening a new
-// row — a dashboard with a hole in it gets the hole used, not a fresh row.
-export function findFreeCell(taken, w, startY = 0) {
-  for (let y = startY; y < startY + 500; y++) {
-    for (let x = 0; x <= COLS - w; x++) {
-      if (!taken.some((it) => overlaps({ x, y, w }, it))) return { x, y };
-    }
-  }
-  return { x: 0, y: startY };
-}
-
-// Force a set of items into a non-overlapping arrangement, in reading order.
-// `anchor` is settled first and never moves — after a drop, the widget the
-// user just placed is the one thing that must stay exactly where it was put.
-export function settle(items, anchor = null) {
-  const clamp = (it) => {
-    it.w = Math.max(1, Math.min(COLS, Number(it.w) || 1));
-    it.x = Math.max(0, Math.min(COLS - it.w, Number.isInteger(it.x) ? it.x : 0));
-    it.y = Math.max(0, Number.isInteger(it.y) ? it.y : 0);
-  };
-  const taken = [];
-  if (anchor) { clamp(anchor); taken.push(anchor); }
-  const rest = items
-    .filter((it) => it !== anchor)
-    .sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
-  for (const it of rest) {
-    clamp(it);
-    if (taken.some((t) => overlaps(it, t))) {
-      const cell = findFreeCell(taken, it.w, it.y);
-      it.x = cell.x; it.y = cell.y;
-    }
-    taken.push(it);
-  }
-  return items;
-}
-
-// Items saved before placement existed have no x/y, and newly added widgets
-// start without one. Both get the first free cell rather than defaulting to
-// 0,0 — which is what stacked every added widget onto the top-left corner.
-// Placed items keep their cell; settle then guarantees nothing overlaps.
-export function autoPlace(items) {
-  const taken = items.filter((it) => Number.isInteger(it.x) && Number.isInteger(it.y));
-  for (const it of items) {
-    if (Number.isInteger(it.x) && Number.isInteger(it.y)) continue;
-    const cell = findFreeCell(taken, it.w, 0);
-    it.x = cell.x; it.y = cell.y;
-    taken.push(it);
-  }
-  return settle(items);
-}
+// Re-exported so the tabs and tests have one import site for the grid model.
+export { COLS, SPANS, HEIGHTS, overlaps, findFreeCell, settle, autoPlace };
 
 // Row boundaries in client coordinates. Columns divide evenly; rows do not,
 // because each sizes to its tallest widget — so they are read back from the
@@ -152,11 +82,6 @@ let picking = false;
 const selected = new Set();   // widget ids ticked in the picker, pre-add
 
 const LAYOUT_ID = cfg.layoutId;
-
-const COLS = 12;
-
-// Column spans offered in edit mode, out of a 12-column grid.
-
 
 // Widths a widget's content actually works at. A KPI tile stretched to full
 // width is a lot of whitespace around one number; a six-column table squeezed
@@ -202,13 +127,17 @@ function normalize(saved) {
     const xr = Number(entry?.x), yr = Number(entry?.y);
     const x = Number.isInteger(xr) ? Math.max(0, Math.min(COLS - w, xr)) : null;
     const y = Number.isInteger(yr) && yr >= 0 ? yr : null;
-    out.push({ id, w, x, y });
+    // Layouts saved before row spans existed carry no h; one row is what they
+    // were rendered at, so that is what they keep.
+    const hr = Number(entry?.h);
+    const h = HEIGHTS.some((s) => s.h === hr) ? hr : 1;
+    out.push({ id, w, h, x, y });
   }
   return out.length ? autoPlace(out) : null;
 }
 
 const defaultLayout = () =>
-  autoPlace(cfg.defaultLayout.map((id) => ({ id, w: defaultSpan(id), x: null, y: null })));
+  autoPlace(cfg.defaultLayout.map((id) => ({ id, w: defaultSpan(id), h: 1, x: null, y: null })));
 
 async function loadLayout() {
   const { data, error } = await supabase
@@ -638,9 +567,9 @@ function paint() {
     }
     return `
       <div class="w${editing ? " is-editing" : ""}"
-           style="--span:${item.w}; --col:${(item.x ?? 0) + 1}; --row:${(item.y ?? 0) + 1}"
+           style="--span:${item.w}; --rowspan:${item.h || 1}; --col:${(item.x ?? 0) + 1}; --row:${(item.y ?? 0) + 1}"
            ${editing ? 'draggable="true"' : ""}
-           data-span="${item.w}" data-x="${item.x ?? 0}" data-y="${item.y ?? 0}"
+           data-span="${item.w}" data-h="${item.h || 1}" data-x="${item.x ?? 0}" data-y="${item.y ?? 0}"
            data-widget="${escapeHtml(item.id)}" data-i="${i}">
         ${editing ? `
           <div class="w-tools">
@@ -650,6 +579,11 @@ function paint() {
               ${SPANS.filter((s) => allowedSpans(item.id).includes(s.w)).map((s) => `<button type="button" class="w-btn${s.w === item.w ? " is-on" : ""}"
                 data-setspan="${s.w}" data-i="${i}" aria-pressed="${s.w === item.w}"
                 title="${s.w} of 12 columns">${s.label}</button>`).join("")}
+            </span>
+            <span class="w-span" role="group" aria-label="Height">
+              ${HEIGHTS.map((s) => `<button type="button" class="w-btn${s.h === (item.h || 1) ? " is-on" : ""}"
+                data-setheight="${s.h}" data-i="${i}" aria-pressed="${s.h === (item.h || 1)}"
+                title="${s.h} row${s.h > 1 ? "s" : ""} tall">${s.label}</button>`).join("")}
             </span>
             <button type="button" class="w-btn" data-move="up" data-i="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
             <button type="button" class="w-btn" data-move="down" data-i="${i}" ${i === layout.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
@@ -711,6 +645,16 @@ function paint() {
       const it = layout[Number(b.dataset.i)];
       it.w = Number(b.dataset.setspan);
       it.x = Math.max(0, Math.min(COLS - it.w, it.x ?? 0));
+      settle(layout, it);
+      void saveLayout(); paint();
+    }));
+  // Growing downward lands on whatever is in the row below, so the resized
+  // widget anchors and settle moves the occupants rather than the other way
+  // round — the same rule a drop follows.
+  body.querySelectorAll("[data-setheight]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const it = layout[Number(b.dataset.i)];
+      it.h = Number(b.dataset.setheight);
       settle(layout, it);
       void saveLayout(); paint();
     }));
@@ -807,6 +751,12 @@ function paintEditBar() {
 
 let dragFrom = null;
 let dragRows = null;   // row boundaries measured once per drag, see dragstart
+// Where inside the widget the pointer grabbed it, in pixels from its left
+// edge. Without this the cursor's own column became the widget's LEFT edge,
+// so grabbing a wide widget anywhere but its left corner made it jump left by
+// most of its own width the moment you moved — which is what made placing one
+// beside another so hard to aim.
+let dragGrabX = 0;
 
 function wireDragDrop(grid) {
   if (!grid) return;
@@ -820,6 +770,7 @@ function wireDragDrop(grid) {
     el.addEventListener("dragstart", (e) => {
       if (!dragAllowed) { e.preventDefault(); return; }
       dragFrom = Number(el.dataset.i);
+      dragGrabX = e.clientX - el.getBoundingClientRect().left;
       el.classList.add("is-dragging");
       // Row heights are read once, here. Measuring them per dragover would
       // feed back on itself: the ghost is a grid child, so as soon as it
@@ -832,7 +783,7 @@ function wireDragDrop(grid) {
     });
 
     el.addEventListener("dragend", () => {
-      dragFrom = null; dragAllowed = false; dragRows = null;
+      dragFrom = null; dragAllowed = false; dragRows = null; dragGrabX = 0;
       el.classList.remove("is-dragging");
       clearGhost(grid);
     });
@@ -890,23 +841,29 @@ function wireDragDrop(grid) {
 // gets extended downward.
 function targetFromPoint(grid, clientX, clientY) {
   const w = layout[dragFrom].w;
+  const h = layout[dragFrom].h || 1;
   const r = grid.getBoundingClientRect();
   const cs = getComputedStyle(grid);
   const gap = parseFloat(cs.columnGap) || 0;
   const colW = (r.width - gap * (COLS - 1)) / COLS;
+  const track = colW + gap;
 
-  // Aim at the cursor's own column, then pull the footprint back on-grid, so
-  // a full-width widget dropped on the right still lands at column 0 rather
-  // than being refused.
-  const col = Math.floor((clientX - r.left) / (colW + gap));
-  const x = Math.max(0, Math.min(COLS - w, Number.isFinite(col) ? col : 0));
+  // The widget's LEFT EDGE is the cursor minus wherever it was grabbed, and it
+  // snaps to the NEAREST column rather than the one it happens to be inside.
+  // Flooring the raw cursor column meant a boundary was only crossed once the
+  // pointer was fully past it, so a widget lined up against its neighbour felt
+  // like it resisted the last column. Clamped after, so a full-width widget
+  // dropped on the right still lands at column 0 rather than being refused.
+  const raw = (clientX - r.left - dragGrabX) / track;
+  const col = Math.round(Number.isFinite(raw) ? raw : 0);
+  const x = Math.max(0, Math.min(COLS - w, col));
 
   const rows = dragRows || measureRows(grid);
   let y = rows.length;
   for (let i = 0; i < rows.length; i++) {
     if (clientY < rows[i].bottom) { y = i; break; }
   }
-  return { x, y: Math.max(0, y), w };
+  return { x, y: Math.max(0, y), w, h };
 }
 
 // Which placed widgets the proposed footprint would land on.
@@ -927,6 +884,7 @@ function showGhost(grid, target, blocked) {
   g.style.setProperty("--col", target.x + 1);
   g.style.setProperty("--row", target.y + 1);
   g.style.setProperty("--span", target.w);
+  g.style.setProperty("--rowspan", target.h || 1);
 
   const state = blocked.length === 0 ? "is-free" : blocked.length === 1 ? "is-swap" : "is-push";
   g.className = `w-ghost ${state}`;
