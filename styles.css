@@ -834,7 +834,13 @@ tbody tr.is-child .sku-cell { font-size: 11px; }
 .chart {
   display: block;
   width: 100%;
-  height: 200px;
+  /* Height follows the widget's row span instead of being pinned at 200px.
+     A flat 200px was why the size controls could not make a chart smaller —
+     nothing about the widget's chosen height reached the chart. The base is
+     deliberately BELOW the old figure so 1x is genuinely more compact than
+     what shipped before, and the +14px per extra row matches the grid gap so
+     a 2x chart lines up with two stacked 1x widgets beside it. */
+  height: calc(var(--rowspan, 1) * 130px + (var(--rowspan, 1) - 1) * 14px);
 }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
 .chart .axis { stroke: var(--line-strong); stroke-width: 1; }

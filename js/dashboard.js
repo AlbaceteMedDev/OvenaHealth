@@ -83,15 +83,21 @@ const selected = new Set();   // widget ids ticked in the picker, pre-add
 
 const LAYOUT_ID = cfg.layoutId;
 
-// Widths a widget's content actually works at. A KPI tile stretched to full
-// width is a lot of whitespace around one number; a six-column table squeezed
-// into a quarter is a scrollbar. Widgets declare what suits them.
-const allowedSpans = (id) => WIDGET_MAP.get(id)?.spans ?? SPANS.map((s) => s.w);
+// Every width is offered for every widget. Widgets still DECLARE the widths
+// their content suits, and defaultSpan below uses that to pick a sensible
+// starting size — but a declaration is a recommendation now, not a veto.
+// Filtering the buttons by it meant the charts were pinned at half-width or
+// wider with no way down: the control existed, it just had nothing smaller to
+// offer on exactly the widgets that were too big.
+const allowedSpans = () => SPANS.map((s) => s.w);
+
+// The width a widget's own catalogue entry recommends, used only as a default.
+const recommendedSpans = (id) => WIDGET_MAP.get(id)?.spans ?? SPANS.map((s) => s.w);
 
 // A widget's natural width when it has never been resized.
 const defaultSpan = (id) => {
   const natural = { kpi: 3, half: 6, full: 12 }[WIDGET_MAP.get(id)?.size] ?? 6;
-  const ok = allowedSpans(id);
+  const ok = recommendedSpans(id);
   return ok.includes(natural) ? natural : ok[ok.length - 1];
 };
 
@@ -123,7 +129,7 @@ function normalize(saved) {
     if (!WIDGET_MAP.has(id)) continue;          // widget removed from the catalogue
     if (!CATALOG_IDS.has(id)) continue;         // widget not in THIS tab's scope
     const raw = typeof entry === "object" ? Number(entry.w) : NaN;
-    const w = allowedSpans(id).includes(raw) ? raw : defaultSpan(id);
+    const w = allowedSpans().includes(raw) ? raw : defaultSpan(id);
     const xr = Number(entry?.x), yr = Number(entry?.y);
     const x = Number.isInteger(xr) ? Math.max(0, Math.min(COLS - w, xr)) : null;
     const y = Number.isInteger(yr) && yr >= 0 ? yr : null;
@@ -576,7 +582,7 @@ function paint() {
             <button type="button" class="w-btn w-grip" data-i="${i}"
                     aria-label="Drag ${escapeHtml(w.title)} to reorder" title="Drag to reorder">⠿</button>
             <span class="w-span" role="group" aria-label="Width">
-              ${SPANS.filter((s) => allowedSpans(item.id).includes(s.w)).map((s) => `<button type="button" class="w-btn${s.w === item.w ? " is-on" : ""}"
+              ${SPANS.map((s) => `<button type="button" class="w-btn${s.w === item.w ? " is-on" : ""}"
                 data-setspan="${s.w}" data-i="${i}" aria-pressed="${s.w === item.w}"
                 title="${s.w} of 12 columns">${s.label}</button>`).join("")}
             </span>
