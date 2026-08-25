@@ -82,6 +82,10 @@ function makeResolver(dbAliases) {
 async function syncSeller(range) {
   const rows = [];
   const notes = [];
+  // Notes are commentary; failures are the connector actually not answering.
+  // Keeping them apart is what lets the run status mean something — see the
+  // status line in the handler.
+  const failures = [];
 
   for (const account of SELLER_ACCOUNTS) {
     let result;
@@ -95,7 +99,7 @@ async function syncSeller(range) {
         metrics: SELLER_FIELDS.metrics,
       });
     } catch (err) {
-      notes.push(`${account.label} traffic: ${err.message}`);
+      failures.push(`${account.label} traffic: ${err.message}`);
       continue;
     }
 
@@ -118,7 +122,7 @@ async function syncSeller(range) {
     if (!result.length) notes.push(`${account.label}: no traffic rows in window`);
   }
 
-  return { rows, notes };
+  return { rows, notes, failures };
 }
 
 // ─── Ads: per-day, per-campaign, across every platform ───────────────
@@ -166,6 +170,7 @@ async function syncAds(range, resolve) {
   const campaignRows = [];
   const skuRows = [];
   const notes = [];
+  const failures = [];
 
   for (const { platform, accounts, perSku } of AD_PLATFORMS) {
     if (!accounts.length) {
@@ -207,7 +212,7 @@ async function syncAds(range, resolve) {
           });
         }
       } catch (err) {
-        notes.push(`${platform} / ${account.label} campaigns: ${err.message}`);
+        failures.push(`${platform} / ${account.label} campaigns: ${err.message}`);
       }
 
       // Per-SKU. Amazon Ads is the only platform that reports an advertised
@@ -246,12 +251,12 @@ async function syncAds(range, resolve) {
           });
         }
       } catch (err) {
-        notes.push(`${platform} / ${account.label} per-SKU: ${err.message}`);
+        failures.push(`${platform} / ${account.label} per-SKU: ${err.message}`);
       }
     }
   }
 
-  return { campaignRows, skuRows, notes };
+  return { campaignRows, skuRows, notes, failures };
 }
 
 // ─── Google Merchant Center: feed health ─────────────────────────────
@@ -272,6 +277,7 @@ async function syncMerchantCenter(range) {
   const issueRows = [];
   const productRows = [];
   const notes = [];
+  const failures = [];
   const stamp = new Date().toISOString();
   let issuesFetched = false;
 
@@ -304,7 +310,7 @@ async function syncMerchantCenter(range) {
         });
       }
     } catch (err) {
-      notes.push(`merchant-center account issues: ${err.message}`);
+      failures.push(`merchant-center account issues: ${err.message}`);
     }
 
     try {
@@ -329,11 +335,11 @@ async function syncMerchantCenter(range) {
         });
       }
     } catch (err) {
-      notes.push(`merchant-center product status: ${err.message}`);
+      failures.push(`merchant-center product status: ${err.message}`);
     }
   }
 
-  return { issueRows, productRows, notes, issuesFetched, stamp };
+  return { issueRows, productRows, notes, failures, issuesFetched, stamp };
 }
 
 export default async function handler(req, res) {
@@ -349,6 +355,7 @@ export default async function handler(req, res) {
 
   const runId = dry ? null : await startRun("catchr");
   const notes = [];
+  const failures = [];
   let written = 0;
 
   try {
@@ -357,12 +364,15 @@ export default async function handler(req, res) {
 
     const seller = await syncSeller(range);
     notes.push(...seller.notes);
+    failures.push(...seller.failures);
 
     const ads = await syncAds(range, resolve);
     notes.push(...ads.notes);
+    failures.push(...ads.failures);
 
     const gmc = await syncMerchantCenter(range);
     notes.push(...gmc.notes);
+    failures.push(...gmc.failures);
 
     if (!dry) {
       // Traffic only. amz_sales_daily is written by /api/sync/orders from
@@ -370,7 +380,7 @@ export default async function handler(req, res) {
       try {
         written += await upsert("amz_traffic_daily", seller.rows, "date,marketplace_id");
       } catch (err) {
-        notes.push(
+        failures.push(
           `amz_traffic_daily: ${err.message} — run migration 0018, then traffic charts fill in`,
         );
       }
@@ -399,9 +409,15 @@ export default async function handler(req, res) {
         gmcProducts: gmc.productRows.length,
       },
       notes,
+      failures,
     };
+    // Status reflects FAILURES, never commentary. Deriving it from notes.length
+    // made "partial" the resting state of a healthy run — every quiet account
+    // and every skipped platform pushed a note — so a genuinely broken sync was
+    // indistinguishable from a working one. That is how the Keywords job
+    // reported 28 survivable-looking runs while writing nothing at all.
     await finishRun(runId, {
-      status: notes.length ? "partial" : "ok",
+      status: failures.length && written === 0 ? "error" : failures.length ? "partial" : "ok",
       rowsWritten: written,
       detail: summary,
     });

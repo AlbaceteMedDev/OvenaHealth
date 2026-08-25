@@ -59,19 +59,22 @@ export default async function handler(req, res) {
       dayRows: totalRows.length,
       excludedLineItems: excludedLines,
       written,
-      notes: [
-        ...(excludedLines
-          ? [`${excludedLines} line item(s) excluded by EXCLUDED_PRODUCT_PATTERNS (Juzo)`]
-          : []),
-        ...(orders.truncatedLineItems?.length
-          ? [
-              `${orders.truncatedLineItems.length} order(s) had more line items than one page: ${orders.truncatedLineItems.join(", ")}. Their revenue is understated — raise LINE_ITEM_PAGE_SIZE.`,
-            ]
-          : []),
-      ],
+      // Excluding Juzo is designed behaviour, not degradation, and it fires on
+      // every run that touches the pre-archive history. Counting it toward the
+      // run status made shopify permanently "partial" — 224 of 247 runs — which
+      // is what stopped "partial" from meaning anything on this dashboard.
+      notes: excludedLines
+        ? [`${excludedLines} line item(s) excluded by EXCLUDED_PRODUCT_PATTERNS (Juzo)`]
+        : [],
+      // Truncation IS degradation: those orders' revenue is understated.
+      failures: orders.truncatedLineItems?.length
+        ? [
+            `${orders.truncatedLineItems.length} order(s) had more line items than one page: ${orders.truncatedLineItems.join(", ")}. Their revenue is understated — raise LINE_ITEM_PAGE_SIZE.`,
+          ]
+        : [],
     };
     await finishRun(runId, {
-      status: summary.notes.length ? "partial" : "ok",
+      status: summary.failures.length ? "partial" : "ok",
       rowsWritten: written,
       detail: summary,
     });

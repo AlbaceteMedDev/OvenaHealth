@@ -45,13 +45,15 @@ async function syncSearchConsole(range) {
   const queryRows = [];
   const pageRows = [];
   const notes = [];
+  // Commentary and breakage are different things; only breakage sets status.
+  const failures = [];
 
   if (!SEARCH_CONSOLE_ACCOUNTS.length) {
     notes.push(
       "search-console: not authorised in Catchr — no keyword or ranking data. " +
       "Connect it under Sources, then set CATCHR_SEARCH_CONSOLE_ACCOUNTS.",
     );
-    return { queryRows, pageRows, notes };
+    return { queryRows, pageRows, notes, failures };
   }
 
   const F = SEARCH_CONSOLE_FIELDS;
@@ -87,12 +89,12 @@ async function syncSearchConsole(range) {
         }
         if (!result.length) notes.push(`search-console ${key}: no rows in window`);
       } catch (err) {
-        notes.push(`search-console ${key}: ${err.message}`);
+        failures.push(`search-console ${key}: ${err.message}`);
       }
     }
   }
 
-  return { queryRows, pageRows, notes };
+  return { queryRows, pageRows, notes, failures };
 }
 
 // ─── GA4: acquisition channels and landing pages ─────────────────────
@@ -104,10 +106,11 @@ async function syncGa4(range) {
   const channelRows = [];
   const pageRows = [];
   const notes = [];
+  const failures = [];
 
   if (!GA_ACCOUNTS.length) {
     notes.push("ga4: no property configured");
-    return { channelRows, pageRows, notes };
+    return { channelRows, pageRows, notes, failures };
   }
 
   const F = GA_FIELDS;
@@ -150,12 +153,12 @@ async function syncGa4(range) {
         }
         if (!result.length) notes.push(`ga4 ${key}: no rows in window`);
       } catch (err) {
-        notes.push(`ga4 ${key}: ${err.message}`);
+        failures.push(`ga4 ${key}: ${err.message}`);
       }
     }
   }
 
-  return { channelRows, pageRows, notes };
+  return { channelRows, pageRows, notes, failures };
 }
 
 export default async function handler(req, res) {
@@ -167,6 +170,7 @@ export default async function handler(req, res) {
 
   const runId = await startRun("seo");
   const notes = [];
+  const failures = [];
   let written = 0;
 
   try {
@@ -187,24 +191,26 @@ export default async function handler(req, res) {
     // Search Console.
     const sc = await syncSearchConsole(rangeFor(days));
     notes.push(...sc.notes);
+    failures.push(...sc.failures);
     if (!dry) {
       try {
         written += await upsert("seo_queries_daily", sc.queryRows, "date,site_url,query");
         written += await upsert("seo_pages_daily", sc.pageRows, "date,site_url,page_path");
       } catch (err) {
-        notes.push(`search-console write: ${err.message} — run migration 0019`);
+        failures.push(`search-console write: ${err.message} — run migration 0019`);
       }
     }
 
     // GA4.
     const ga = await syncGa4(rangeFor(days));
     notes.push(...ga.notes);
+    failures.push(...ga.failures);
     if (!dry) {
       try {
         written += await upsert("ga_channels_daily", ga.channelRows, "date,property_id,channel_group");
         written += await upsert("ga_landing_pages_daily", ga.pageRows, "date,property_id,landing_page");
       } catch (err) {
-        notes.push(`ga4 write: ${err.message} — run migration 0020`);
+        failures.push(`ga4 write: ${err.message} — run migration 0020`);
       }
     }
 
@@ -214,19 +220,21 @@ export default async function handler(req, res) {
         sessions: rows.length, queries: sc.queryRows.length, pages: sc.pageRows.length,
         gaChannels: ga.channelRows.length, gaPages: ga.pageRows.length,
       },
-      bySource, notes,
+      bySource, notes, failures,
     };
     // Object form, not positional. This used to be finishRun(runId, "ok",
     // written, detail), which destructured the string — every SEO run
     // recorded rows_written 0 and a null detail no matter what it wrote.
+    // Status from FAILURES, not notes: an unconfigured GA4 property and a
+    // quiet day both push notes, and neither is a fault.
     await finishRun(runId, {
-      status: notes.length ? "partial" : "ok",
+      status: failures.length && written === 0 ? "error" : failures.length ? "partial" : "ok",
       rowsWritten: written,
       detail: summary,
     });
     return res.status(200).json(summary);
   } catch (err) {
-    await finishRun(runId, { status: "error", rowsWritten: written, detail: { error: err.message, notes } });
-    return res.status(200).json({ ok: false, error: err.message, notes });
+    await finishRun(runId, { status: "error", rowsWritten: written, detail: { error: err.message, notes, failures } });
+    return res.status(500).json({ ok: false, error: err.message, notes, failures });
   }
 }
