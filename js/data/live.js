@@ -243,19 +243,28 @@ export function rollupSearch(rows, key) {
 // nothing. The cap is deliberately generous: 3,400 Google terms and 900
 // Amazon ones appear in a single month, so a low limit would silently hide
 // the long tail rather than the noise.
+// Search terms go through /api/search-terms rather than PostgREST: the
+// table's "auth read" policy has never been created, so a direct read
+// answers zero rows no matter how much data is there. The endpoint runs the
+// identical query with the service key after verifying this session's token
+// — same audience a policy would admit, different door. Everything else
+// about the contract matches run(): a {rows, error} shape, never a throw.
 export function fetchSearchTerms(days) {
-  return cached("searchTerms", { days }, () =>
-    run(
-      supabase
-        .from("ads_search_terms")
-        .select(
-          "date, platform, search_term, keyword, match_type, campaign_name, impressions, clicks, cost, sales, orders, units",
-        )
-        .gte("date", startDateFor(days))
-        .order("cost", { ascending: false })
-        .limit(8000),
-    ),
-  );
+  return cached("searchTerms", { days }, async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) return { rows: [], error: "Not signed in" };
+      const res = await fetch(`/api/search-terms?days=${encodeURIComponent(days)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) return { rows: [], error: body?.error || `HTTP ${res.status}` };
+      return { rows: body?.rows || [], error: null };
+    } catch (err) {
+      return { rows: [], error: err.message };
+    }
+  });
 }
 
 // Roll daily term rows up across the window. Everything here is a count or an
