@@ -7,7 +7,7 @@
 
 import { seedInventory } from "../data/inventory.js";
 import { getState, updateRow, resetQuantities, subscribe } from "../state.js";
-import { fetchFbaInventory, fetchSyncStatus } from "../data/live.js";
+import { fetchFbaInventory, fetchSyncStatus, fetchAmzOrders } from "../data/live.js";
 import { fmtNumber } from "../format.js";
 import { openAmazonImport } from "../importer.js";
 import { syncStateFor, syncBadge, syncLine } from "../ui.js";
@@ -16,8 +16,8 @@ let panelEl = null;
 let filterState = { q: "", channel: "stocked" };
 const expanded = new Set(); // group keys currently expanded
 
-// SKU → { fulfillable, inbound, reserved, unfulfillable }. Empty until the
-// FBA sync has run at least once.
+// SKU → { fulfillable, inbound, reserved, unfulfillable, soldSince, asOf }.
+// Empty until fba_inventory has rows.
 let fbaBySku = new Map();
 
 export function mountInventory(el) {
@@ -140,7 +140,16 @@ export function mountInventory(el) {
 // ─── Live FBA ────────────────────────────────────────────────────────
 
 async function loadFba() {
-  const [fba, runs] = await Promise.all([fetchFbaInventory(), fetchSyncStatus()]);
+  // Orders come along because they are what keeps the Amazon column moving:
+  // fba_inventory is a snapshot, but amz_orders refreshes every 30 minutes,
+  // so FBA units sold SINCE the snapshot can be subtracted from it. The
+  // column then decays in near-real-time between snapshots instead of
+  // freezing at whatever was true when the snapshot was taken.
+  const [fba, runs, orders] = await Promise.all([
+    fetchFbaInventory(),
+    fetchSyncStatus(),
+    fetchAmzOrders(14),
+  ]);
   if (!panelEl) return;
 
   const sync = syncStateFor(runs.rows, "fba");
@@ -153,15 +162,42 @@ async function loadFba() {
 
   if (fba.error) return;
 
+  // FBA units sold after each SKU's snapshot day. Strictly AFTER: Amazon has
+  // already removed the snapshot day's earlier sales from Available, so
+  // subtracting that day again would double-count. Cancelled orders never
+  // shipped; an orders fetch error just leaves the map empty and the raw
+  // snapshot shows — stale beats wrong.
+  const snapDay = new Map();
+  for (const r of fba.rows) {
+    const key = r.sku || r.amazon_sku;
+    const day = (r.synced_at || "").slice(0, 10);
+    if (!snapDay.has(key) || day < snapDay.get(key)) snapDay.set(key, day);
+  }
+  const soldSince = new Map();
+  for (const o of orders.rows || []) {
+    if (o.fulfillment_channel !== "Amazon") continue;
+    if (o.order_status === "Cancelled") continue;
+    const day = snapDay.get(o.sku);
+    if (!day || o.purchase_day <= day) continue;
+    soldSince.set(o.sku, (soldSince.get(o.sku) || 0) + (o.quantity || 0));
+  }
+
   const map = new Map();
   for (const r of fba.rows) {
     const key = r.sku || r.amazon_sku;
-    const slot = map.get(key) || { fulfillable: 0, inbound: 0, reserved: 0, unfulfillable: 0 };
+    const slot = map.get(key) || { fulfillable: 0, inbound: 0, reserved: 0, unfulfillable: 0, soldSince: 0, asOf: null };
     slot.fulfillable += r.fulfillable || 0;
     slot.inbound += (r.inbound_working || 0) + (r.inbound_shipped || 0) + (r.inbound_receiving || 0);
     slot.reserved += r.reserved || 0;
     slot.unfulfillable += r.unfulfillable || 0;
+    slot.asOf = snapDay.get(key) || null;
     map.set(key, slot);
+  }
+  for (const [sku, sold] of soldSince) {
+    const slot = map.get(sku);
+    if (!slot) continue;
+    slot.soldSince = sold;
+    slot.fulfillable = Math.max(0, slot.fulfillable - sold);
   }
   fbaBySku = map;
 
@@ -186,6 +222,8 @@ function rowsWithState() {
       amazon,
       inbound,
       isLiveFba: Boolean(fba),
+      fbaSoldSince: fba ? fba.soldSince : 0,
+      fbaAsOf: fba ? fba.asOf : null,
       warehouse: s.warehouse,
       reorderLevel: s.reorderLevel,
       total,
@@ -437,8 +475,11 @@ function renderTable() {
 
 function renderLeafRow(r, indented = false) {
   // Live FBA is read-only — editing it would be a lie, Amazon owns the number.
+  const fbaNote = r.fbaSoldSince
+    ? `FBA snapshot ${r.fbaAsOf || ""} minus ${r.fbaSoldSince} sold since (orders refresh every 30 min)`
+    : `FBA snapshot ${r.fbaAsOf || ""}`;
   const amazonCell = r.isLiveFba
-    ? `<td class="num ink" title="Live from Amazon SP-API"><strong>${fmtNumber(r.amazon)}</strong></td>`
+    ? `<td class="num ink" title="${escapeAttr(fbaNote)}"><strong>${fmtNumber(r.amazon)}</strong></td>`
     : `<td class="num"><input type="number" min="0" data-field="amazon" value="${r.amazon}" /></td>`;
 
   return `
