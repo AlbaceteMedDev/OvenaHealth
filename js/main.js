@@ -252,14 +252,56 @@ function refreshNow() {
   console.info("[refresh]", currentTab);
 }
 
+// ─── New-build detection ─────────────────────────────────────────────
+//
+// Module URLs never change here — no build step, no hashed filenames — so a
+// tab left open keeps running the JavaScript it first loaded no matter how
+// many times the site is deployed. Re-mounting a tab re-runs old code, and
+// clearCache() only drops DATA, so a shipped fix could sit there invisible
+// while the person watching concluded it had not worked. This notices the
+// server moved and says so, rather than letting a stale tab lie quietly.
+let buildAtLoad = null;
+
+async function currentBuild() {
+  try {
+    const res = await fetch("/api/version", { cache: "no-store" });
+    if (!res.ok) return null;
+    return (await res.json())?.build || null;
+  } catch {
+    return null;   // offline or blocked: say nothing rather than nag
+  }
+}
+
+function showUpdateBanner() {
+  if (document.getElementById("buildUpdate")) return;
+  const bar = document.createElement("div");
+  bar.id = "buildUpdate";
+  bar.className = "build-update";
+  bar.innerHTML =
+    `<span>A newer version of the portal is available.</span>` +
+    `<button type="button" class="btn primary" id="buildReload">Reload</button>`;
+  document.body.appendChild(bar);
+  document.getElementById("buildReload").addEventListener("click", () => location.reload());
+}
+
+async function checkBuild() {
+  const build = await currentBuild();
+  if (!build) return;
+  if (buildAtLoad === null) { buildAtLoad = build; return; }
+  if (build !== buildAtLoad) showUpdateBanner();
+}
+
+void checkBuild();
+
 setInterval(() => {
-  if (document.visibilityState === "visible") refreshNow();
+  if (document.visibilityState === "visible") { refreshNow(); void checkBuild(); }
   else missedWhileHidden = true;
 }, REFRESH_MS);
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   if (missedWhileHidden || Date.now() - lastRefresh >= REFRESH_MS) refreshNow();
+  void checkBuild();   // coming back to the tab is the likeliest moment to catch a deploy
 });
 
 stampRefresh();

@@ -2089,3 +2089,25 @@ label.pick .chip { flex-shrink: 0; }
 }
 .controls .check input { margin: 0; cursor: pointer; }
 .controls .check:hover { color: var(--ink); }
+
+/* Shown when the server reports a build newer than the one this tab loaded.
+   Fixed and low-contrast on purpose: it is an offer, not an interruption —
+   an open dashboard should not have work yanked out from under it. */
+.build-update {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface, #fff);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  font-size: 13px;
+}
+@media (max-width: 600px) {
+  .build-update { left: 18px; right: 18px; justify-content: space-between; }
+}
