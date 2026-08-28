@@ -48,7 +48,6 @@ export function mountInventory(el) {
             <option value="all">All SKUs (incl. retired)</option>
             <option value="listed">Listed on Amazon</option>
             <option value="retired">Retired listings</option>
-            <option value="unlisted">Warehouse only (no ASIN)</option>
             <option value="low">Low stock</option>
           </select>
           <span style="flex:1"></span>
@@ -89,8 +88,15 @@ export function mountInventory(el) {
     </div>
   `;
 
+  const channelSel = el.querySelector("#invChannel");
+  if (![...channelSel.options].some((o) => o.value === filterState.channel)) {
+    filterState.channel = "stocked";
+  }
+  channelSel.value = filterState.channel;
+  el.querySelector("#invSearch").value = filterState.q;
+
   el.querySelector("#invSearch").addEventListener("input", (e) => {
-    filterState.q = e.target.value.trim().toLowerCase();
+    filterState.q = e.target.value;
     renderTable();
   });
   el.querySelector("#invChannel").addEventListener("change", (e) => {
@@ -233,7 +239,8 @@ function worstStatus(children) {
 }
 
 function applyFilter(row) {
-  const { q, channel } = filterState;
+  const q = filterState.q.trim().toLowerCase();
+  const { channel } = filterState;
   const matches =
     !q ||
     row.sku.toLowerCase().includes(q) ||
@@ -246,7 +253,6 @@ function applyFilter(row) {
   if (channel === "stocked") matchesCh = row.stocked !== false;
   else if (channel === "listed") matchesCh = row.listed;
   else if (channel === "retired") matchesCh = row.listed && row.stocked === false;
-  else if (channel === "unlisted") matchesCh = !row.listed;
   else if (channel === "low") matchesCh = row.status === "Low";
   return matches && matchesCh;
 }
@@ -387,9 +393,27 @@ function renderTable() {
     }
   }
 
-  body.innerHTML = visibleCount
-    ? html
-    : `<tr><td colspan="9"><div class="empty">No SKUs match your filters.</div></td></tr>`;
+  if (visibleCount) {
+    body.innerHTML = html;
+  } else {
+    const channelLabel =
+      panelEl.querySelector(`#invChannel option[value="${filterState.channel}"]`)?.textContent ||
+      filterState.channel;
+    const why = [
+      filterState.channel !== "stocked" ? `channel “${channelLabel}”` : null,
+      filterState.q.trim() ? `search “${escapeHtml(filterState.q.trim())}”` : null,
+    ].filter(Boolean).join(" and ");
+    body.innerHTML = `<tr><td colspan="9"><div class="empty">
+      No SKUs match ${why || "your filters"}.
+      <button type="button" class="btn ghost" id="invClearFilters" style="margin-left:10px">Show everything</button>
+    </div></td></tr>`;
+    body.querySelector("#invClearFilters").addEventListener("click", () => {
+      filterState = { q: "", channel: "stocked" };
+      panelEl.querySelector("#invChannel").value = "stocked";
+      panelEl.querySelector("#invSearch").value = "";
+      renderTable();
+    });
+  }
 
   panelEl.querySelector("#invCount").textContent =
     `${all.filter(applyFilter).length} of ${all.length} SKUs`;
