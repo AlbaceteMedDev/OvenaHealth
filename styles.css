@@ -2111,3 +2111,16 @@ label.pick .chip { flex-shrink: 0; }
 @media (max-width: 600px) {
   .build-update { left: 18px; right: 18px; justify-content: space-between; }
 }
+
+/* ─── Suggestions tab (static audit record) ───────────────────────── */
+.plain-list { list-style: none; margin: 0; padding: 0; }
+.plain-list li { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; color: var(--muted); line-height: 1.55; }
+.plain-list li:last-child { border-bottom: 0; }
+.plain-list li strong { color: var(--ink); }
+.plain-ol { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--muted); }
+.plain-ol li { padding: 3px 0; line-height: 1.5; }
+.plain-ol.rules li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.plain-ol.rules li:last-child { border-bottom: 0; }
+.roadmap-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+.roadmap-cols h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+@media (max-width: 860px) { .roadmap-cols { grid-template-columns: 1fr; } }

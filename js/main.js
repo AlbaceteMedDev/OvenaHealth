@@ -15,8 +15,9 @@ import { mountKeywords } from "./tabs/keywords.js";
 import { mountInventory } from "./tabs/inventory.js";
 import { mountScan } from "./tabs/scan.js";
 import { mountMargins } from "./tabs/margins.js";
+import { mountSuggestions } from "./tabs/suggestions.js";
 
-const tabs = ["overview", "amazon", "shopify", "seo", "meta", "google", "keywords", "inventory", "scan", "margins"];
+const tabs = ["overview", "amazon", "shopify", "seo", "meta", "google", "keywords", "inventory", "scan", "margins", "suggestions"];
 const mounts = {
   overview: mountOverview,
   amazon: mountAmazon,
@@ -28,6 +29,7 @@ const mounts = {
   inventory: mountInventory,
   scan: mountScan,
   margins: mountMargins,
+  suggestions: mountSuggestions,
 };
 
 // Old hash links (#sales, #products, #ads) still exist in bookmarks and in
