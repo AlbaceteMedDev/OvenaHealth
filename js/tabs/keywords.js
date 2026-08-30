@@ -11,8 +11,9 @@
 // them would produce a ROAS that means nothing, so spend is totalled across
 // both and sales are always shown per platform.
 
-import { fetchSearchTerms, rollupSearchTerms, fetchSyncStatus, daysAvailable, DATA_START }
+import { fetchSearchTerms, rollupSearchTerms, fetchSyncStatus, daysAvailable, DATA_START, clearCache }
   from "../data/live.js";
+import { supabase } from "../supabase.js";
 import { fmtCurrency, fmtNumber, fmtPercent } from "../format.js";
 import {
   escapeHtml, debounce, periodButtons, wirePeriod, periodLabel, floorNote,
@@ -58,6 +59,8 @@ export function mountKeywords(el) {
       <div class="tab-tools">
         <div class="segmented" role="group" aria-label="Period">${periodButtons(period)}</div>
         ${exportButton(`${P}Export`)}
+        <button type="button" class="btn ghost" id="${P}SyncNow"
+                title="Pull the latest search terms from Amazon and Google now">Sync now</button>
       </div>
     </div>
     <div id="${P}Body">${loadingBox()}</div>
@@ -65,7 +68,80 @@ export function mountKeywords(el) {
 
   wirePeriod(el, () => period, (v) => { period = v; }, render);
   wireExport(el, `${P}Export`, () => ctx?.exportData);
+  wireSyncNow(el);
   render();
+}
+
+// A sync is not a refresh. Reloading re-reads the database, and between the
+// six-hourly crons the database already holds the newest search terms that
+// exist — so refreshing could never make this page newer. This asks the
+// platforms for new data, then re-reads.
+function wireSyncNow(el) {
+  const btn = el.querySelector(`#${P}SyncNow`);
+  if (!btn) return;
+
+  const say = (text, warn) => {
+    const line = panelEl?.querySelector(`#${P}Sync`);
+    if (line) line.innerHTML = `<div class="syncline">${warn ? "\u26a0\ufe0f " : ""}${escapeHtml(text)}</div>`;
+  };
+
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Syncing\u2026";
+    say("Asking Amazon and Google for the latest search terms\u2026");
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) { say("Not signed in \u2014 reload the page.", true); return; }
+
+      const res = await fetch("/api/sync-now?job=searchterms", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        // The function keeps running after the browser gives up, so an abort
+        // is reported as still running, never as failed.
+        signal: AbortSignal.timeout(120_000),
+      });
+      const body = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        // 429 and 409 are the rate limits working: information, not failure.
+        say(body?.error || `Sync failed (HTTP ${res.status}).`, res.status >= 500);
+        return;
+      }
+
+      // The table is a poor receipt. The platforms report 1-3 days behind, so
+      // a perfectly good sync usually rewrites identical rows and nothing
+      // visibly moves. Report what the sync itself said instead.
+      const r = body?.result || {};
+      const per = Object.entries(r.platforms || {})
+        .map(([k, v]) => `${k.replace("-ads", "")} ${fmtNumber(v.rows || 0)}`)
+        .join(" \u00b7 ");
+      say([
+        `Synced ${fmtNumber(r.written || 0)} rows`,
+        per || null,
+        body.partial ? "some platforms reported errors" : null,
+      ].filter(Boolean).join(" \u00b7 ") +
+        ". Search-term data lags 1\u20133 days, so the newest days fill in later.");
+
+      // Without this the 60-second read cache returns the pre-sync rows and a
+      // successful sync looks like it did nothing.
+      clearCache();
+      await render();
+    } catch (err) {
+      say(
+        err?.name === "TimeoutError"
+          ? "Still running in the background \u2014 give it a minute, then refresh."
+          : `Sync failed: ${err.message}`,
+        true,
+      );
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
 }
 
 // ---- data ----------------------------------------------------------
@@ -74,7 +150,7 @@ async function render() {
   const body = panelEl.querySelector(`#${P}Body`);
   body.innerHTML = loadingBox();
 
-  const [terms, runs] = await Promise.all([fetchSearchTerms(period), fetchSyncStatus()]);
+  const [terms, runs] = await Promise.all([fetchSearchTerms(period), fetchSyncStatus("searchterms")]);
 
   const sync = syncStateFor(runs.rows, "searchterms");
   panelEl.querySelector(`#${P}Badge`).innerHTML = syncBadge(sync);

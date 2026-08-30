@@ -448,16 +448,20 @@ export function fetchGmcStatus() {
 }
 
 // ─── Sync freshness ──────────────────────────────────────────────────
-export function fetchSyncStatus() {
-  return cached("sync", {}, () =>
-    run(
-      supabase
-        .from("sync_runs")
-        .select("job, status, rows_written, started_at, finished_at, detail")
-        .order("started_at", { ascending: false })
-        .limit(20),
-    ),
-  );
+// Pass a job to scope the history to it. Unscoped, this returns the newest
+// 20 runs across ALL jobs — and the crons fire roughly 155 times a day, so
+// 20 rows covers only the last few hours. A job that runs every six hours
+// falls out of that window between runs, and syncStateFor then reports it as
+// having never run: the Keywords badge read "Not synced" for most of every
+// cycle while the sync was in fact healthy.
+export function fetchSyncStatus(job = null) {
+  return cached("sync", { job }, () => {
+    let q = supabase
+      .from("sync_runs")
+      .select("job, status, rows_written, started_at, finished_at, detail");
+    if (job) q = q.eq("job", job);
+    return run(q.order("started_at", { ascending: false }).limit(20));
+  });
 }
 
 // ─── Shaping helpers ─────────────────────────────────────────────────
