@@ -10,7 +10,7 @@
 
 import { supabase } from "../supabase.js";
 import { skuMap, resolveSku } from "./inventory.js";
-import { DATA_START, isExcludedProduct } from "../config.js";
+import { DATA_START, isExcludedProduct, todayInReportTz } from "../config.js";
 
 const cache = new Map();
 const TTL_MS = 60_000;
@@ -38,8 +38,10 @@ export function clearCache() {
 // reporting floor is enforced in exactly one place.
 export function startDateFor(days) {
   if (days === "all") return DATA_START;
-  const d = new Date();
-  d.setDate(d.getDate() - (days - 1));
+  // Count back from TODAY IN THE REPORTING TIMEZONE, not UTC. Off by a few
+  // hours every evening otherwise, which silently shifted every window.
+  const d = new Date(`${todayInReportTz()}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - (days - 1));
   const iso = d.toISOString().slice(0, 10);
   return iso < DATA_START ? DATA_START : iso;
 }
@@ -48,7 +50,7 @@ export function startDateFor(days) {
 // instead of implying a full 90.
 export function daysAvailable() {
   const start = Date.parse(`${DATA_START}T00:00:00Z`);
-  const today = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+  const today = Date.parse(`${todayInReportTz()}T00:00:00Z`);
   return Math.max(1, Math.round((today - start) / 86400000) + 1);
 }
 

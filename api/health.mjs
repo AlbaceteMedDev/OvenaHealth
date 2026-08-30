@@ -21,6 +21,7 @@ import { authorized } from "./_lib/auth.mjs";
 import { SELLER_ACCOUNTS, AMAZON_ADS_ACCOUNTS, FACEBOOK_ADS_ACCOUNTS, GOOGLE_ADS_ACCOUNTS } from "./_lib/accounts.mjs";
 import { isConfigured as spapiConfigured } from "./_lib/spapi.mjs";
 import { isConfigured as shopifyConfigured } from "./_lib/shopify.mjs";
+import { REPORT_TZ } from "../js/config.js";
 
 // Without these the sync cannot run at all.
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "CATCHR_API_KEY", "CRON_SECRET"];
@@ -72,7 +73,7 @@ export default async function handler(req, res) {
       CATCHR_QUERY_PATH: process.env.CATCHR_QUERY_PATH || "/query/{platform} (default)",
       CATCHR_AUTH_STYLE: process.env.CATCHR_AUTH_STYLE || "bearer (default)",
       SHOPIFY_API_VERSION: process.env.SHOPIFY_API_VERSION || "2025-01 (default)",
-      REPORT_TIMEZONE: process.env.REPORT_TIMEZONE || "UTC (default)",
+      REPORT_TIMEZONE: process.env.REPORT_TIMEZONE || `${REPORT_TZ} (default)`,
     },
   };
 

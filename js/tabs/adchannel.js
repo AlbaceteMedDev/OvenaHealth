@@ -19,6 +19,7 @@ import {
   grainButtons, wireGrain,
   loadingBox, errorBox, syncStateFor, syncBadge, syncLine, acosTone, roasTone, fmtRatio,
 } from "../ui.js";
+import { todayInReportTz } from "../config.js";
 
 // Creates a mount function for one platform.
 let wiredResize = false;
@@ -61,7 +62,7 @@ export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBl
     const storeNet = shopTotals(shop.rows).net;
     const m = adMetrics(t, storeNet);
 
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = todayInReportTz();   // the store's day, not UTC's
     const daily = bucketSeries(rows, grain, (r) => ({
       spend: Number(r.cost) || 0,
       attributed: Number(r.attributed_sales) || 0,

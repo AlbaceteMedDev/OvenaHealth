@@ -38,6 +38,7 @@ import { WIDGETS, WIDGET_MAP } from "./widgets.js";
 import {
   COLS, SPANS, HEIGHTS, overlaps, findFreeCell, settle, autoPlace,
 } from "./placement.js";
+import { todayInReportTz } from "./config.js";
 
 // Re-exported so the tabs and tests have one import site for the grid model.
 export { COLS, SPANS, HEIGHTS, overlaps, findFreeCell, settle, autoPlace };
@@ -337,7 +338,7 @@ async function render() {
     .sort((a, b) => (a.date === b.date ? b.revenue - a.revenue : a.date < b.date ? 1 : -1));
 
   // Daily blended series
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayInReportTz();   // the store's day, not UTC's
   const merged = new Map();
   const fold = (rows, pick, keys, preBucketed = false) => {
     for (const b of (preBucketed ? rows : bucketSeries(rows, grain, pick))) {

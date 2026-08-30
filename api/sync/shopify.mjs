@@ -11,7 +11,7 @@
 
 import { fetchOrdersSince, shapeOrders, isConfigured } from "../_lib/shopify.mjs";
 import { upsert, startRun, finishRun } from "../_lib/db.mjs";
-import { DATA_START, isExcludedProduct } from "../../js/config.js";
+import { DATA_START, isExcludedProduct, REPORT_TZ } from "../../js/config.js";
 import { authorized, UNAUTHORIZED } from "../_lib/auth.mjs";
 
 export default async function handler(req, res) {
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const orders = await fetchOrdersSince(since);
     const { productRows, totalRows, excludedLines } = shapeOrders(orders, {
       isExcluded: isExcludedProduct,
-      timeZone: process.env.REPORT_TIMEZONE || "UTC",
+      timeZone: process.env.REPORT_TIMEZONE || REPORT_TZ,
     });
 
     let written = 0;

@@ -37,3 +37,29 @@ export function isExcludedProduct(title) {
   if (!title) return false;
   return EXCLUDED_PRODUCT_PATTERNS.some((re) => re.test(title));
 }
+
+// ─── Reporting timezone ──────────────────────────────────────────────
+// The calendar day every figure is bucketed into.
+//
+// This is the STORE's timezone, confirmed against Shopify (shop.timezone =
+// EDT / America/New_York) — not the server's and not UTC. It used to be UTC
+// by default, which put every order placed after 8pm Eastern onto the NEXT
+// day: the portal disagreed with Shopify's own Analytics on any evening
+// order, and opened a phantom "tomorrow" column that could only ever be
+// partly filled. Amazon is bucketed in Pacific for the same reason (see
+// pacificDay in api/sync/orders.mjs) — Amazon reports in Pacific, so its
+// days are Amazon's days and these are the storefront's.
+//
+// Server-side, REPORT_TIMEZONE overrides this if the store ever moves.
+export const REPORT_TZ = "America/New_York";
+
+// Today's date in the reporting timezone, as YYYY-MM-DD. en-CA is the
+// shortest route from Intl to that format.
+export function todayInReportTz(now = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: REPORT_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
