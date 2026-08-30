@@ -10,7 +10,7 @@
 // and only a full re-read catches that.
 
 import { fetchOrdersSince, shapeOrders, isConfigured } from "../_lib/shopify.mjs";
-import { upsert, startRun, finishRun } from "../_lib/db.mjs";
+import { upsert, replaceAll, startRun, finishRun } from "../_lib/db.mjs";
 import { DATA_START, isExcludedProduct, REPORT_TZ } from "../../js/config.js";
 import { authorized, UNAUTHORIZED } from "../_lib/auth.mjs";
 
@@ -44,10 +44,35 @@ export default async function handler(req, res) {
       timeZone: process.env.REPORT_TIMEZONE || REPORT_TZ,
     });
 
+    // A full-window run re-reads EVERY day from the reporting floor, so what
+    // it produces is the complete truth for the window — which makes it safe,
+    // and necessary, to prune whatever it did not produce. Upserting alone
+    // could only ever ADD or UPDATE, so a row the sync stopped producing
+    // survived forever at its last value: the 2026-08-12 seed rows outlived
+    // the Amazon filter that should have removed them, and re-bucketing days
+    // from UTC to Eastern stranded a phantom copy of every evening order on
+    // the following day. shop_sales_daily suffered worst, being keyed per
+    // product rather than per day, so its stale siblings survived even on
+    // days the totals table had fully corrected — which is exactly how
+    // "revenue by product" came to exceed the daily net it should sum to.
+    //
+    // A NARROWED run (?since=) sees only part of the window, so pruning there
+    // would delete real history that simply was not fetched. Those stay on a
+    // plain upsert.
+    const stamp = new Date().toISOString();
+    for (const r of productRows) r.synced_at = stamp;
+    for (const r of totalRows) r.synced_at = stamp;
+    const fullWindow = since === DATA_START;
+
     let written = 0;
     if (!dry) {
-      written += await upsert("shop_sales_daily", productRows, "date,product_title,variant_title");
-      written += await upsert("shop_totals_daily", totalRows, "date");
+      if (fullWindow) {
+        written += await replaceAll("shop_sales_daily", productRows, "date,product_title,variant_title", stamp);
+        written += await replaceAll("shop_totals_daily", totalRows, "date", stamp);
+      } else {
+        written += await upsert("shop_sales_daily", productRows, "date,product_title,variant_title");
+        written += await upsert("shop_totals_daily", totalRows, "date");
+      }
     }
 
     const summary = {
@@ -57,6 +82,7 @@ export default async function handler(req, res) {
       ordersFetched: orders.length,
       productRows: productRows.length,
       dayRows: totalRows.length,
+      pruned: fullWindow,
       excludedLineItems: excludedLines,
       written,
       // Excluding Juzo is designed behaviour, not degradation, and it fires on
