@@ -304,4 +304,32 @@ document.addEventListener("visibilitychange", () => {
   void checkBuild();   // coming back to the tab is the likeliest moment to catch a deploy
 });
 
+// The auto-refresh runs every 30 minutes and only while the tab is visible,
+// so there was no way to say "now" — after a sync lands, or after correcting
+// something in Supabase, the only options were waiting or a full page reload.
+// This reuses refreshNow(), which clears the 60-second read cache and
+// re-mounts the current tab, so it fetches genuinely fresh rows rather than
+// re-rendering what is already in memory.
+const refreshBtn = document.getElementById("refreshNow");
+if (refreshBtn) {
+  const label = document.getElementById("refreshNowLabel");
+  refreshBtn.addEventListener("click", async () => {
+    if (refreshBtn.disabled) return;
+    refreshBtn.disabled = true;
+    if (label) label.textContent = "Refreshing…";
+    try {
+      refreshNow();
+      // Also ask whether a new build shipped, since someone reaching for
+      // Refresh is usually chasing a change they expect to see.
+      await checkBuild();
+    } finally {
+      // Held briefly so a fast refresh still reads as having happened.
+      setTimeout(() => {
+        refreshBtn.disabled = false;
+        if (label) label.textContent = "Refresh";
+      }, 600);
+    }
+  });
+}
+
 stampRefresh();
