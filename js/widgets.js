@@ -106,12 +106,18 @@ export const WIDGETS = [
               ${line("Amazon ordered sales", c.amzT.revenue, { kind: "in", note: `${fmtNumber(c.amzT.units)} units`, hintKey: "ORDERED PRODUCT SALES" })}
               ${line("Shopify net sales", c.shopT.net, { kind: "in", note: `${fmtNumber(c.shopT.orders)} orders`, hintKey: "NET SALES" })}
               ${line("Total revenue", c.revenue, { kind: "in", strong: true })}
-              ${line("Amazon fees", p.fees, { note: "referral, measured from settlement", hintKey: "FBA" })}
+              ${line("Amazon fees", p.fees, {
+                note: p.fbaUnitsCharged
+                  ? `referral; ${fmtNumber(p.fbaUnitsCharged)} FBA units also charged fulfilment`
+                  : "referral, measured from settlement",
+                hintKey: "FBA",
+              })}
               ${line("Cost of goods", p.cogs, { note: "supplier invoice, per unit sold", hintKey: "COGS" })}
               ${line("Inbound shipping", p.shipping, { note: "freight to warehouse, per unit sold" })}
               ${line("Outbound shipping", p.outbound, { note: "warehouse to customer — per shipment, both channels" })}
               ${line("Payment processing", p.payment, { note: "Shopify Payments; Amazon's is inside its referral fee" })}
               ${line("FBA storage", p.storage, { note: "monthly charge, prorated over the window", hintKey: "FBA" })}
+              ${line("Amazon account fees", p.amazonCosts, { note: "subscription, service fees and inbound freight, from the settlement ledger" })}
               ${line("Contribution margin", p.contribution, { kind: "in", strong: true, hintKey: "CONTRIBUTION MARGIN" })}
               ${line("Advertising", p.adSpend, { note: c.spendByPlatform.map((x) => x.label).join(", ") || "no spend" })}
               ${line(p.net < 0 ? "Net loss" : "Net profit", p.net, { kind: p.net < 0 ? "neg" : "in", strong: true })}

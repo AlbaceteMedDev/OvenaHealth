@@ -13,7 +13,7 @@ const initial = {
   inventory: Object.fromEntries(
     seedInventory.map((row) => [
       row.sku,
-      { amazon: 0, warehouse: 0, reorderLevel: row.reorderLevel, cogs: 0, amazonFee: 0, shipCost: 0, shipToCustomer: 0 },
+      { amazon: 0, warehouse: 0, reorderLevel: row.reorderLevel, cogs: 0, amazonFee: 0, amazonFeeFba: 0, shipCost: 0, shipToCustomer: 0 },
     ]),
   ),
   lastSavedAt: null,
@@ -48,7 +48,7 @@ function notifyError(msg) { for (const fn of errorListeners) fn(msg); }
 export async function loadInitial() {
   const { data, error } = await supabase
     .from("inventory_state")
-    .select("sku, amazon_qty, shopify_qty, reorder_level, cogs, amazon_fee, ship_cost, ship_to_customer, updated_at");
+    .select("sku, amazon_qty, shopify_qty, reorder_level, cogs, amazon_fee, amazon_fee_fba, ship_cost, ship_to_customer, updated_at");
   if (error) {
     notifyError(`Couldn't load inventory: ${error.message}`);
     booted = true;
@@ -67,6 +67,11 @@ export async function loadInitial() {
         // it so a COGS edit can't overwrite it — PostgREST only updates the
         // columns present in the payload.
         amazonFee: Number(row.amazon_fee ?? 0),
+        // The FBA rate — referral PLUS fulfilment, 4-9x the merchant rate.
+        // Migration 0018 recorded it and nothing ever read it, so an FBA sale
+        // was charged the merchant-fulfilled referral and the fulfilment half
+        // simply vanished from the P&L. Read-only here, like amazonFee.
+        amazonFeeFba: Number(row.amazon_fee_fba ?? 0),
         // Inbound freight per unit. Read-only here too, and also omitted
         // from persistRow so a COGS edit can't clear it.
         shipCost: Number(row.ship_cost ?? 0),

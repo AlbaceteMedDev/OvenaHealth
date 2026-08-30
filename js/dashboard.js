@@ -16,14 +16,14 @@
 
 import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
-  fetchSeoSessions, fetchAdsBySku, fetchStoreCosts, fetchTraffic, fetchAmzOrders,
+  fetchSeoSessions, fetchAdsBySku, fetchStoreCosts, fetchTraffic, fetchAmzOrders, fetchAmzTransactions,
   fetchSeoQueries, fetchSeoPages, rollupSearch,
   fetchGaChannels, fetchGaLandingPages, rollupGa,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START,
 } from "./data/live.js";
 import { bucketSeries, isPartialBucket } from "./series.js";
-import { seedInventory, skuMap, resolveShopifySku } from "./data/inventory.js";
+import { seedInventory, skuMap, resolveShopifySku, resolveSku } from "./data/inventory.js";
 import { getState, subscribe } from "./state.js";
 import { supabase } from "./supabase.js";
 import { exportButton, wireExport } from "./export.js";
@@ -218,7 +218,7 @@ async function render() {
   body.innerHTML = loadingBox();
 
   const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, traffic, amzOrders,
-         seoQueryRows, seoPageRows, gaChannelRows, gaPageRows, savedLayout] = await Promise.all([
+         seoQueryRows, seoPageRows, gaChannelRows, gaPageRows, savedLayout, amzTxns] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
     fetchSeoSessions(period),
@@ -231,6 +231,7 @@ async function render() {
     fetchGaChannels(period),
     fetchGaLandingPages(period),
     layout ? Promise.resolve(layout) : loadLayout(),
+    fetchAmzTransactions(period),
   ]);
   layout = savedLayout;
 
@@ -403,7 +404,7 @@ async function render() {
     period, grain, amz, shop, ads: { rows: adRows }, runs, fba, seo, adBySku,
     storeCosts: (storeCostRows?.rows || [])[0] || {},
     shopSales,
-    amzT, shopT, adT, adM, revenue, bySku, byProduct, amzOrders,
+    amzT, shopT, adT, adM, revenue, bySku, byProduct, amzOrders, amzTxns,
     // Search Console, rolled up across the window. Position is re-weighted
     // by impressions inside rollupSearch — it is an average rank, not a
     // count, so it can never be summed or averaged flat.
@@ -450,7 +451,8 @@ function rebuildInventory() {
     return {
       sku: row.sku, product: row.product, variant: row.variant,
       retail: row.suggestedPrice || 0, reorderLevel: row.reorderLevel || 0,
-      cogs: s.cogs || 0, amazonFee: s.amazonFee || 0, shipCost: s.shipCost || 0,
+      cogs: s.cogs || 0, amazonFee: s.amazonFee || 0, amazonFeeFba: s.amazonFeeFba || 0,
+      shipCost: s.shipCost || 0,
       shipToCustomer: s.shipToCustomer || 0,
       fba: fbaQty, warehouse, total: fbaQty + warehouse,
     };
@@ -464,11 +466,39 @@ function rebuildInventory() {
 
   // Unit economics on what actually sold
   const costBySku = new Map(invRows.map((r) => [r.sku, r]));
-  let fees = 0, cogs = 0, shipping = 0, uncosted = 0;
+
+  // Amazon charges two different fees and which one applies depends on who
+  // ships. amazon_fee is referral only; amazon_fee_fba is referral PLUS
+  // fulfilment and runs 4-9x higher. Everything was charged the merchant
+  // rate, so the fulfilment half of every FBA sale never reached the P&L.
+  //
+  // Units come from amz_sales_daily, which does not say who fulfilled them,
+  // so the split is read from amz_orders — which does. Its sku is the SELLER
+  // sku ("SOCK-AID-FBA"), not the catalog sku, which is why resolveSku is
+  // needed and why a plain join would have silently matched nothing.
+  const fbaUnitsBySku = new Map();
+  for (const r of ctx.amzOrders?.rows || []) {
+    if (r.fulfillment_channel !== "Amazon") continue;
+    if (r.order_status === "Cancelled") continue;
+    const row = resolveSku(r.sku, null);
+    if (!row) continue;
+    fbaUnitsBySku.set(row.sku, (fbaUnitsBySku.get(row.sku) || 0) + (r.quantity || 0));
+  }
+
+  let fees = 0, cogs = 0, shipping = 0, uncosted = 0, fbaUnitsCharged = 0;
   for (const s of ctx.bySku) {
     const c = costBySku.get(s.sku);
     if (!c || (c.cogs === 0 && c.amazonFee === 0)) { uncosted += s.units; continue; }
-    fees += s.units * c.amazonFee;
+    // Clamped to the units this window actually reports: the two tables can
+    // disagree at the edges of the window, and an unclamped count could
+    // charge the FBA rate to more units than were sold.
+    const fbaUnits = Math.min(s.units, fbaUnitsBySku.get(s.sku) || 0);
+    const fbmUnits = Math.max(0, s.units - fbaUnits);
+    // No FBA rate on file falls back to the merchant rate — the number it
+    // has always used, rather than a guess or a zero.
+    const fbaRate = c.amazonFeeFba > 0 ? c.amazonFeeFba : c.amazonFee;
+    fees += fbmUnits * c.amazonFee + fbaUnits * fbaRate;
+    fbaUnitsCharged += fbaUnits;
     cogs += s.units * c.cogs;
     shipping += s.units * c.shipCost;
   }
@@ -539,17 +569,39 @@ function rebuildInventory() {
   const days = Math.max(1, ctx.available || ctx.daily.length);
   const storage = ((Number(sc.fba_storage_month) || 0) / 30) * days;
 
-  const contribution = ctx.revenue - fees - cogs - shipping - outbound - payment - storage;
+  // Amazon's settlement ledger carries costs that belong to no single order:
+  // service and subscription fees, inbound freight, shipping bought from
+  // Amazon. The table has existed since migration 0018 and nothing read it,
+  // so these were simply missing and net profit read better than it was.
+  //
+  // Order Payment and Refund are excluded deliberately — that is order money,
+  // already counted in amz_sales_daily, and charging it here would
+  // double-count the entire Amazon top line. Seller repayments are excluded
+  // too: a positive disbursement adjustment is not trading income, and
+  // booking it as one would flatter the number in the other direction.
+  // Signs are Amazon's own — a fee is already negative — so this is added.
+  const ORDER_MONEY = new Set(["Order Payment", "Refund", "Paid to Amazon | Seller repayment"]);
+  let settlement = 0;
+  for (const r of ctx.amzTxns?.rows || []) {
+    if (ORDER_MONEY.has(r.transaction_type)) continue;
+    settlement += Number(r.total_amount) || 0;
+  }
+  // Held as a positive COST so it reads like every other line in the P&L.
+  const amazonCosts = -Math.min(0, settlement);
+
+  const contribution = ctx.revenue - fees - cogs - shipping - outbound - payment - storage - amazonCosts;
   ctx.invRows = invRows;
   ctx.invT = invT;
   ctx.pl = {
-    fees, cogs, shipping, outbound, payment, storage, contribution, uncosted,
+    fees, cogs, shipping, outbound, payment, storage, amazonCosts, contribution, uncosted,
+    fbaUnitsCharged,
     // Which lines have no rate on file, so the P&L can say "not recorded"
     // instead of showing a $0.00 cost that reads as a fact.
     unset: [
       outbound === 0 && (shopShipments + amzShipments) > 0 ? "outbound shipping" : null,
       payment === 0 && (ctx.shopT.orders || 0) > 0 ? "payment processing" : null,
       storage === 0 ? "FBA storage" : null,
+      amazonCosts === 0 && (ctx.amzTxns?.rows || []).length === 0 ? "Amazon settlement fees" : null,
     ].filter(Boolean),
     adSpend: ctx.adT.cost, net: contribution - ctx.adT.cost,
   };

@@ -164,6 +164,26 @@ export function fetchFbaInventory() {
   );
 }
 
+// Amazon's settlement ledger: subscription, service fees, inbound freight —
+// period costs that belong to the business rather than to any one order.
+// Migration 0018 created the table and NOTHING ever read it, so these never
+// reached the P&L and net profit was reported better than it was.
+//
+// Order Payment and Refund rows are excluded by the caller, not here: those
+// are order money already represented in amz_sales_daily, and charging them
+// again would double-count the whole Amazon top line.
+export function fetchAmzTransactions(days) {
+  return cached("amzTransactions", { days }, () =>
+    run(
+      supabase
+        .from("amz_transactions")
+        .select("posted_on, transaction_type, amazon_order_id, total_amount, amazon_fees, other_amount")
+        .gte("posted_on", startDateFor(days))
+        .order("posted_on", { ascending: true }),
+    ),
+  );
+}
+
 // ─── Shopify storefront ──────────────────────────────────────────────
 // Excluded products (Juzo) are filtered here rather than in SQL so the
 // rule lives with the rest of the reporting policy in config.js, and so a
