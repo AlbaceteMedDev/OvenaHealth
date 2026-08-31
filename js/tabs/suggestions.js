@@ -69,6 +69,47 @@ const RULES = [
   "Reconcile Business Report, month summary, and orders monthly. This month they matched to the cent.",
 ];
 
+// ---------------------------------------------------------------------------
+// Storefront + measurement pass, Aug 31 2026. Everything below was verified
+// against the live storefront and the live Google Ads account, not against
+// exports. Where it contradicts the Aug 30 audit above, this section wins.
+// ---------------------------------------------------------------------------
+const AS_OF_STOREFRONT = "Aug 31, 2026";
+
+const SHIPPED = [
+  ["Negative inventory cleared", "Socks M/L/XL sat at \u22125/\u221212/\u22128 and saline at \u22127, all still set to keep selling", "Set to 200. All 56 variants re-checked: none negative"],
+  ["Retired sizes pulled", "Size S and every 2-Pair and 3-Pair variant were still buyable", "9 variants deleted; product is now M/L/XL, 1 pair, $24.99"],
+  ["Duplicate collagen SKUs removed", "Three shells created Aug 26 (OVN-COLL-*): zero stock, zero images, no SEO tags, raw HTML rendering on the page, zero orders ever", "Deleted and 301\u2019d to the real collagen pages"],
+  ["Wrong size reaching the cart", "The collection size cards resolve by exact variant title; the orphan Size S card fell through and added size M", "Stale card removed from the live theme. M\u2192M, L\u2192L, XL\u2192XL each verified on the rendered page"],
+  ["Sizing copy corrected", "\u201cSizes S-XL\u201d in the product meta description and in two blog CTAs", "All now read M-XL"],
+];
+
+const STOREFRONT_OPEN = [
+  ["Keyword cannibalisation, 7 topic pairs", "Thin /pages/ versions duplicate the full /blogs/learn/ articles at 82\u201393% word overlap. The four ovena-vs-* pairs have <b>both</b> URLs in the sitemap", "Canonical each thin page to its article, or 301 it"],
+  ["Collagen is absent from Google Shopping", "The feed carries only socks, roll and sock aid. The highest-margin line is not in it at all", "Add collagen to the feed once the campaign structure is decided"],
+  ["/collections/collagen-wound-care returns 404", "Still referenced in Google\u2019s tag coverage report", "Redirect to /collections/collagen"],
+  ["Stray duplicate pages", "contact-clinical-1 duplicates contact-clinical; collagen-103 is an unpublished twin of collagen-101", "Delete both"],
+  ["Six pages with no meta description", "custom-kit, cart-preview, compression-for-flying, compression-for-nurses, contact-clinical-1, post-surgical-compression", "Write descriptions or de-index"],
+  ["Three thin articles", "compression-therapy-resources (753 chars), clinical-primers (918), collagen-wound-care-resources (1,213)", "Expand or consolidate into their pillar"],
+];
+
+const ADS_CORRECTIONS = [
+  ["The {ignore} URLs are a reporting artifact, not a leak", "Verified five ways: account template is {lpurl}; the account Final URL suffix contains no {ignore}; all 22 ads carry no template or suffix override; {ignore} appears 0 times in 2,992 lines of change history. Google inserts it in the Landing Pages report to mark where the suffix begins", "Do not re-raise this as wasted spend"],
+  ["The $2,275 was lost to targeting, not to 404s", "All-time: $2,275.93 and 2,040 clicks for <b>3 purchases</b> ($44.38 value) = $758 per purchase. July spend was $0, so all-time is August", "The stop list above still stands, for the original reason"],
+  ["Conversion counts are contaminated for one 21-hour window only", "Aug 25 10:53 \u2192 Aug 26 08:15, six micro-events were made primary and included in Conversions, then reverted. All-time reads 38 conversions = 3 purchases + 22 page views + 13 view-items", "Segment by conversion action before quoting any conversion number"],
+  ["Competitor is running on a goal with no primary conversion action", "Flagged \u201cEligible (Limited)\u201d in the account while on Maximize conversions. $125.84 and 18 clicks at $6.99 CPC, zero purchases ever. All four campaigns were switched off account-default goals on Aug 26 and never switched back", "Restore account-default goals, or pause Competitor"],
+  ["Brand pays $12.55 a click on your own brand name", "$75.28 over 6 clicks, spend +219.6% week over week, on a Maximize-conversions strategy trained during the contaminated window", "Reset the bid strategy, not just the configuration"],
+  ["Ads point at the non-www host", "Every final URL uses ovenahealth.com, which 301s to www. Every paid click pays an extra redirect hop, on an account that is 84% mobile", "Switch final URLs to www"],
+];
+
+const INFRA = [
+  ["SHOPIFY_ADMIN_TOKEN is set in Vercel and will break the sync", "accessToken() short-circuits on the static token, disabling the minting path. A client-credentials token lasts 24 hours \u2014 the exact failure this code\u2019s own comment documents", "Delete the variable; CLIENT_ID + CLIENT_SECRET resume minting"],
+  ["Google Ads requires 2-Step Verification from Sep 14, 2026", "Banner in the account; the interstitial says to contact an account administrator", "Enable it before the deadline"],
+  ["Storefront carries 15 web pixels and three overlapping GA4 senders", "Official app + GTM-K9V2KCSS inside a Shopify custom pixel + Anowave server-side, all to G-3Z78Q6ES5M. Homepage is 279,632 bytes with 113KB of inline JS", "One controlled test order, then keep one purchase sender per destination"],
+  ["Debug logger left in production", "The GTM custom HTML tag runs setInterval(console.log(dataLayer), 1000) \u2014 the whole dataLayer to the browser console every second", "Remove the tag"],
+  ["Remarketing tag is inert", "The GTM Google Ads Remarketing tag has conversion ID and label both set to the literal string \u201c0\u201d", "Correct the destination or delete the tag"],
+];
+
 function rows(list, cells) {
   return list.map((r) => `<tr>${cells(r)}</tr>`).join("");
 }
@@ -102,6 +143,46 @@ export function mountSuggestions(el) {
         prices: Google generic search, the 5 ft Hydro Roll on $2 clicks, and product-page placements nobody has adjusted.
         Cutting those funds the conversion fixes (reviews, restock, Buy Box) that move every remaining dollar.
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Shipped ${AS_OF_STOREFRONT}</h3><span class="hint">storefront fixes, verified on the live site</span></div>
+      <div class="card-body flush"><div class="table-wrap">
+        <table>
+          <thead><tr><th>Fix</th><th>What was wrong</th><th>State now</th></tr></thead>
+          <tbody>${rows(SHIPPED, (r) => `<td class="ink">${r[0]}</td><td class="muted">${r[1]}</td><td class="val-good">${r[2]}</td>`)}</tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Storefront and SEO, still open</h3><span class="hint">nothing here is urgent; the first row is the one that costs traffic</span></div>
+      <div class="card-body flush"><div class="table-wrap">
+        <table>
+          <thead><tr><th>Issue</th><th>Evidence</th><th>Action</th></tr></thead>
+          <tbody>${rows(STOREFRONT_OPEN, (r) => `<td class="ink">${r[0]}</td><td class="muted">${r[1]}</td><td>${r[2]}</td>`)}</tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Google Ads: corrections to the ${AS_OF} read</h3><span class="hint">verified in the live account on ${AS_OF_STOREFRONT}</span></div>
+      <div class="card-body flush"><div class="table-wrap">
+        <table>
+          <thead><tr><th>Finding</th><th>Evidence</th><th>What to do</th></tr></thead>
+          <tbody>${rows(ADS_CORRECTIONS, (r) => `<td class="ink">${r[0]}</td><td class="muted">${r[1]}</td><td>${r[2]}</td>`)}</tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Plumbing that will bite</h3><span class="hint">none of this shows up in a revenue report until it breaks</span></div>
+      <div class="card-body flush"><div class="table-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>Why it matters</th><th>Action</th></tr></thead>
+          <tbody>${rows(INFRA, (r) => `<td class="ink">${r[0]}</td><td class="muted">${r[1]}</td><td>${r[2]}</td>`)}</tbody>
+        </table>
+      </div></div>
     </div>
 
     <div class="card">
