@@ -24,9 +24,12 @@ const HARVEST = [
   ["knee high compression socks", "3 orders, 12% ACOS", "Exact, bid $1.50"],
   ["compression socks for women / for men", "7 orders combined, 31–52% ACOS", "Exact, bid $1.35–1.40"],
   ["20-30 mmHg phrasing family", "converts across variants", "Exact set, bid $1.50"],
+  ["anatomical fit compression socks 20-30 mmhg", "newer window: $2.25 → $67.47, 3% ACOS (3-unit order)", "Exact, bid $1.50"],
   ["circaid / therafirm / jobst / dynaven / truform", "medical-brand conquest, 24–27% ACOS where it ran", "Exact + product targets, bid $1.60"],
-  ["sock aid / compression sock aid", "28+ orders, best CPC in the account", "Exacts at $0.90–1.00"],
+  ["sock aid / sock helper / sock aids / sock assist", "newer window: 7 orders, 29–48% ACOS. The dated report ends the day these campaigns launched", "Exacts at $0.90–1.00"],
+  ["compression sock aid / …device / …helper / sock aids for putting on socks", "newer window: 4 more orders at $1–17 spend each", "Exacts at $0.90–1.00"],
   ["wound collagen / puracol plus collagen wound dressing", "3 orders, 15–33% ACOS", "Exact, bid $1.70–1.80"],
+  ["collagen patches for wound care 4x4 / collagen sheets for wounds", "newer window: 2 orders at $49.99 each for $5.65 total spend (4–7% ACOS)", "Exact at $1.60; add 'patches' and 'sheets' to the listing copy"],
 ];
 
 const NEGATE = [
@@ -38,6 +41,8 @@ const NEGATE = [
   ["Mighty Patch + FITFEL product targets", "$63, 0 orders", "Pause targets"],
   ["collagen wound dressing (inside Auto only)", "$21 in Auto, 0 orders there", "Negative phrase in Auto; keep the Discovery phrase, it converts"],
   ["juven · medias de compresión · sock donner", "$44 combined, 0 orders", "Negative phrase"],
+  ["30-40 mmHg · 20 mmHg compression socks men", "newer window: $11.59, 0 orders. Wrong compression class — the product is 20-30", "Negative phrase / exact"],
+  ["gelling fiber wound dressing", "newer window: $3.60, 0 orders. Alginate is a different dressing category", "Negative phrase"],
 ];
 
 const EXPERIMENTS = [
@@ -76,7 +81,9 @@ export function mountSuggestions(el) {
         <p>The ${AS_OF} seller audit read against this portal's measured costs: what to stop, what to protect, and the order to do it in.
         <span class="muted-inline">Static decision record, not a live feed. Amazon figures cover Jul 30 to Aug 28 (SP, 7-day attribution);
         money lines use this portal's P&amp;L since Jul 19. Costs are real: supplier-invoice COGS from the Margins tab plus standard
-        referral and FBA rates going forward.</span></p>
+        referral and FBA rates going forward. Rows marked “newer window” come from per-campaign console exports dated Aug 29–30 —
+        spend, orders and sales only, no CTR or CPC, and no date stamp — because the dated search-term report was pulled for
+        Jul 22–Aug 20 and so ends the day the Sock Aid campaigns launched.</span></p>
       </div>
     </div>
 
@@ -141,6 +148,8 @@ export function mountSuggestions(el) {
           <li><strong>Socks L rating.</strong> 3.66 stars raw with ~11% refunds. Put calf-width and firmness guidance high on the page and fix the fit story.</li>
           <li><strong>Hold the Buy Box with FBA.</strong> MFN won about half of order lines at equal price, which drops the Prime badge. Price MFN $0.50–1.00 above FBA while FBA is stocked.</li>
           <li><strong>Check powder pricing.</strong> At the $30 selling price seen on Amazon with $22.60 COGS on file, each unit loses ≈$1.26 before ads. Verify the COGS entry, then reprice or stop promoting it.</li>
+          <li><strong>Add the vocabulary customers actually use.</strong> Two newer-window orders came in on “collagen <em>patches</em> for wound care 4x4” and “collagen <em>sheets</em> for wounds” at $49.99 each. Neither word is in the listing; add both to copy and backend terms.</li>
+          <li><strong>Re-pull the search-term report for Aug 1–28, per campaign.</strong> The dated export on file stops at Aug 20 and the console snapshots cap at 50 rows, so the Sock Aid long tail is only partly visible.</li>
         </ul>
       </div>
     </div>
