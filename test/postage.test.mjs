@@ -8,7 +8,7 @@
 // the parser is judged on. Every expected figure was computed from the
 // original file before the parser existed.
 
-import { parseLabels } from "../js/postage-parse.js";
+import { parseLabels, classify, postcode } from "../js/postage-parse.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -94,6 +94,40 @@ console.log("\nbad input is refused rather than half-read");
     'tracking #,date printed,amount paid\nAAA,08/26/2026,7.10\nAAA,08/26/2026,7.10\nBBB,08/26/2026,3.00');
   eq("a repeated tracking number counts once", dup.length, 2);
   eq("and keeps the right total", round(dup.reduce((n, r) => n + r.amount, 0)), 10.10);
+}
+
+console.log("\npostcodes are the join, so both sides must reduce alike");
+{
+  // The carrier writes ="76179", Amazon writes 07652-4305, Canada has a space.
+  eq("a spreadsheet-escaped zip", postcode('="76179"'), "76179");
+  eq("ZIP+4 keeps five", postcode("07652-4305"), "07652");
+  eq("a leading zero survives", postcode('="02035"'), "02035");
+  eq("a Canadian postcode", postcode("V5C 0N2"), "V5C0N");
+  eq("nothing in, nothing out", postcode(""), "");
+  ok("every label carries one", rows.every((r) => r.postal.length === 5));
+}
+
+console.log("\nlabels are attributed by where they went");
+{
+  // The real split, measured 2026-08-31: a label going to a postcode Amazon
+  // merchant-fulfilled an order to is Amazon's; everything else is the
+  // storefront's. Amazon buyers paid $27.70 of shipping across 137 FBM
+  // orders, the storefront charged $120.00 across 19 — which is the whole
+  // reason these cannot share one P&L line.
+  const fbm = new Set(["94501", "85281", "14580", "23666"]);
+  const tagged = rows.map((r) => ({ ...r, channel: classify(r, fbm) }));
+  ok("a postcode Amazon shipped to is Amazon's",
+     tagged.filter((r) => fbm.has(r.postal) && !r.excluded).every((r) => r.channel === "amazon_fbm"));
+  ok("everything else is the storefront's",
+     tagged.filter((r) => !fbm.has(r.postal) && !r.excluded).every((r) => r.channel === "storefront"));
+  // Exclusion outranks attribution: another business's postage is neither.
+  ok("an excluded shipper is never charged to a channel",
+     tagged.filter((r) => r.excluded).every((r) => r.channel === "excluded"));
+  // With no order history loaded nothing can be Amazon's — it must not
+  // guess, and it must not throw.
+  ok("no order history means no Amazon attribution",
+     rows.every((r) => classify(r, new Set()) !== "amazon_fbm"));
+  ok("an absent set is survivable", classify(rows[0], undefined) !== "amazon_fbm");
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

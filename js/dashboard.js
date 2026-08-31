@@ -742,6 +742,19 @@ function rebuildInventory() {
     // of one kind.
     outboundActual: Math.round(outboundActual * 100) / 100,
     outboundEstimated: Math.round(outboundEstimated * 100) / 100,
+    // Split by channel, because the two behave nothing alike: the storefront
+    // charges the customer for shipping and Amazon merchant-fulfilled orders
+    // do not. Scaled by the same measured/estimated proportion as the total,
+    // so a partly-covered window does not report a channel split for days no
+    // label reaches.
+    outboundAmazon: Math.round(postage.amazonFbm * 100) / 100,
+    outboundStorefront: Math.round(postage.storefront * 100) / 100,
+    postageAttributed: postage.attributed,
+    // What Amazon buyers paid toward merchant-fulfilled shipping. Nearly
+    // nothing, which is the whole point — the storefront recovers its postage
+    // and FBM does not.
+    amazonShipCharged: Math.round((ctx.amzOrders?.rows || []).reduce(
+      (n, r) => n + (r.fulfillment_channel !== "Amazon" ? Number(r.shipping_price) || 0 : 0), 0) * 100) / 100,
     postageLabels: postage.labels,
     postageFrom: postage.from,
     postageTo: postage.to,

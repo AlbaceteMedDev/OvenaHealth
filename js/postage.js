@@ -15,7 +15,7 @@
 // the finest honest grain, which is all the P&L needs.
 
 import { supabase } from "./supabase.js";
-import { parseLabels } from "./postage-parse.js";
+import { parseLabels, classify } from "./postage-parse.js";
 import { fmtCurrency, fmtNumber } from "./format.js";
 import { escapeHtml } from "./ui.js";
 
@@ -95,7 +95,29 @@ async function handleFile(file, onDone) {
     return;
   }
   parsed = rows;
+  // Attribution needs the WHOLE Amazon order history, not the window being
+  // viewed, so it is fetched here rather than read off the dashboard.
+  const fbm = await fbmPostcodes();
+  for (const r of parsed) r.channel = classify(r, fbm);
   renderPreview(onDone);
+}
+
+// Destinations that merchant-fulfilled Amazon orders went to. FBA is excluded
+// on purpose: Amazon ships those itself and the cost is inside its fee, so an
+// FBA postcode must never claim a label Ovena actually paid for.
+async function fbmPostcodes() {
+  const set = new Set();
+  const { data, error } = await supabase
+    .from("amz_orders")
+    .select("ship_postal_code")
+    .neq("fulfillment_channel", "Amazon")
+    .gt("quantity", 0);
+  if (error) return set;
+  for (const r of data || []) {
+    const p = String(r.ship_postal_code || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 5);
+    if (p) set.add(p);
+  }
+  return set;
 }
 
 function renderPreview(onDone) {
@@ -115,10 +137,21 @@ function renderPreview(onDone) {
     byExcluded.set(r.recipient, s);
   }
 
+  const byChannel = new Map();
+  for (const r of counted) {
+    const s = byChannel.get(r.channel) || { n: 0, amt: 0 };
+    s.n += 1; s.amt += r.amount;
+    byChannel.set(r.channel, s);
+  }
+  const CH = { amazon_fbm: "Amazon merchant-fulfilled", storefront: "storefront" };
+
   b.innerHTML = `
     <p><strong>${fmtNumber(counted.length)} labels</strong> · ${fmtCurrency(total)}
        · ${escapeHtml(dates[0])} to ${escapeHtml(dates[dates.length - 1])}
        · ${fmtCurrency(counted.length ? total / counted.length : 0)} average</p>
+    <p class="hint">${[...byChannel].map(([c, s]) =>
+       `${fmtNumber(s.n)} ${CH[c] || c} (${fmtCurrency(s.amt)})`).join(" · ")}
+       — attributed by destination postcode, the only join the export allows.</p>
     ${excluded.length ? `<p class="hint">${fmtNumber(excluded.length)} label(s) excluded as another
        business's postage: ${[...byExcluded].map(([n, s]) =>
          `${escapeHtml(n)} (${s.n}, ${fmtCurrency(s.amt)})`).join(", ")}.</p>` : ""}
@@ -151,6 +184,8 @@ async function apply(onDone) {
     service: r.service || null,
     weight: r.weight || null,
     recipient: r.recipient || null,
+    postal_code: r.postal || null,
+    channel: r.channel || "storefront",
     refund_status: r.excluded ? "excluded shipper" : (r.refund || null),
   }));
 
@@ -167,6 +202,8 @@ async function apply(onDone) {
     if (status) {
       status.innerHTML = /ship_labels/.test(err.message)
         ? "The <code>ship_labels</code> table does not exist yet — run migration 0023 in Supabase."
+        : /channel|postal_code/.test(err.message)
+        ? "Run migration 0024 in Supabase — <code>ship_labels</code> has no channel column yet."
         : escapeHtml(`Import failed: ${err.message}`);
     }
     if (btn) { btn.disabled = false; btn.textContent = "Retry"; }

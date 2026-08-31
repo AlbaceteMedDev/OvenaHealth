@@ -118,13 +118,25 @@ export const WIDGETS = [
               })}
               ${line("Cost of goods", p.cogs, { note: "supplier invoice, per unit sold", hintKey: "COGS" })}
               ${line("Inbound shipping", p.shipping, { note: "freight to warehouse, per unit sold" })}
+              ${p.postageAttributed ? `
+              ${line("Outbound shipping — Amazon FBM", p.outboundAmazon, {
+                note: p.amazonShipCharged > 0
+                  ? `merchant-fulfilled; buyers paid only ${fmtCurrency(p.amazonShipCharged)} toward it`
+                  : "merchant-fulfilled; Amazon buyers paid nothing toward it",
+              })}
+              ${line("Outbound shipping — storefront", p.outboundStorefront, {
+                note: `against ${fmtCurrency(c.shopT.shipping)} charged to customers above`,
+              })}
+              ${p.outboundEstimated > 0 ? line("Outbound shipping — estimated", p.outboundEstimated, {
+                note: "days no imported label covers",
+              }) : ""}` : `
               ${line("Outbound shipping", p.outbound, {
                 note: p.postageLabels
                   ? (p.outboundEstimated > 0
                       ? `${fmtCurrency(p.outboundActual)} from ${fmtNumber(p.postageLabels)} imported labels, ${fmtCurrency(p.outboundEstimated)} still estimated`
                       : `measured — ${fmtNumber(p.postageLabels)} labels actually bought`)
                   : `estimated — ${fmtNumber(p.shipments)} shipments × ${fmtCurrency(p.estimateRate)}, no labels imported`,
-              })}
+              })}`}
               ${line("Payment processing", p.payment, { note: "Shopify Payments; Amazon's is inside its referral fee" })}
               ${line("FBA storage", p.storage, { note: "monthly charge, prorated over the window", hintKey: "FBA" })}
               ${line("Amazon account fees", p.amazonCosts, { note: "subscription, service fees and inbound freight, from the settlement ledger" })}

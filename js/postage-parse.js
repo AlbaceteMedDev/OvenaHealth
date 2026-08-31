@@ -21,6 +21,7 @@ const COL = {
   weight: ["weight"],
   recipient: ["name", "recipient name"],
   refund: ["refund status"],
+  postal: ["postal code", "zip", "zip code", "postal/zip code"],
 };
 
 const pick = (header, names) => {
@@ -48,6 +49,26 @@ function isoDate(v) {
 // Some columns arrive as ="01234" so a spreadsheet keeps the leading zero.
 const clean = (v) => String(v ?? "").replace(/^="?|"?$/g, "").trim();
 
+// Postcodes are the only join back to an order, and the two sides write them
+// differently: the carrier export gives ="76179" or "76179-1234", Amazon
+// gives "07652-4305". Both reduce to the same five characters.
+export const postcode = (v) =>
+  clean(v).replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 5);
+
+// Attribute each label to a channel.
+//
+// `fbmPostcodes` is the set of destinations Amazon merchant-fulfilled orders
+// went to. A label going somewhere Amazon shipped is Amazon's; everything
+// else is the storefront's. This is an attribution, not a proof — a postcode
+// is not unique to an order — but it is the only join the export allows, and
+// it separates the two things that behave completely differently: the
+// storefront charges for shipping and Amazon FBM does not.
+export function classify(label, fbmPostcodes) {
+  if (label.excluded) return "excluded";
+  if (label.postal && fbmPostcodes?.has(label.postal)) return "amazon_fbm";
+  return "storefront";
+}
+
 export function parseLabels(text) {
   const lines = text.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return null;
@@ -65,6 +86,7 @@ export function parseLabels(text) {
   const iWt = pick(header, COL.weight);
   const iRcp = pick(header, COL.recipient);
   const iRef = pick(header, COL.refund);
+  const iZip = pick(header, COL.postal);
 
   const out = [];
   const seen = new Set();
@@ -89,6 +111,9 @@ export function parseLabels(text) {
       weight: iWt >= 0 ? clean(c[iWt]) : "",
       recipient,
       refund: iRef >= 0 ? clean(c[iRef]) : "",
+      // 5 characters, uppercased: the export writes ZIP+4 and Canadian
+      // postcodes with a space, and the amz_orders side stores ZIP+4 too.
+      postal: iZip >= 0 ? postcode(c[iZip]) : "",
       excluded: isExcludedShipper(recipient),
     });
   }

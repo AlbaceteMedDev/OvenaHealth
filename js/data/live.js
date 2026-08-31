@@ -116,7 +116,7 @@ export function fetchAmzOrders(days) {
     run(
       supabase
         .from("amz_orders")
-        .select("amazon_order_id, purchase_day, sku, quantity, item_price, fulfillment_channel, order_status, ship_state")
+        .select("amazon_order_id, purchase_day, sku, quantity, item_price, fulfillment_channel, order_status, ship_state, shipping_price")
         .gte("purchase_day", startDateFor(days))
         .order("purchase_day", { ascending: true }),
     ),
@@ -452,7 +452,7 @@ export function fetchShipLabels(days) {
     const out = await run(
       supabase
         .from("ship_labels")
-        .select("date_printed, amount")
+        .select("date_printed, amount, channel")
         .gte("date_printed", startDateFor(days))
         .order("date_printed", { ascending: true }),
     );
@@ -473,17 +473,34 @@ export function fetchShipLabels(days) {
 // shipping.
 export function postageByDay(rows) {
   const byDay = new Map();
+  // Split by channel as well as by day. The storefront charges the customer
+  // for shipping and Amazon merchant-fulfilled orders do not, so one combined
+  // postage line describes neither: it made the storefront look expensive to
+  // ship for when it roughly pays for itself, and hid the unrecovered postage
+  // on FBM, which is where the money actually goes.
+  const byChannel = new Map();
   for (const r of rows) {
     const d = String(r.date_printed).slice(0, 10);
-    byDay.set(d, (byDay.get(d) || 0) + (Number(r.amount) || 0));
+    const amt = Number(r.amount) || 0;
+    byDay.set(d, (byDay.get(d) || 0) + amt);
+    const c = r.channel || "storefront";
+    byChannel.set(c, (byChannel.get(c) || 0) + amt);
   }
   const days = [...byDay.keys()].sort();
+  const round = (n) => Math.round(n * 100) / 100;
   return {
     byDay,
-    total: Math.round([...byDay.values()].reduce((a, b) => a + b, 0) * 100) / 100,
+    byChannel,
+    amazonFbm: round(byChannel.get("amazon_fbm") || 0),
+    storefront: round(byChannel.get("storefront") || 0),
+    total: round([...byDay.values()].reduce((a, b) => a + b, 0)),
     from: days[0] || null,
     to: days[days.length - 1] || null,
     labels: rows.length,
+    // Whether any label carries a channel at all. Before migration 0024 they
+    // do not, and the P&L must say "not attributed" rather than silently
+    // reporting every label as the storefront's.
+    attributed: rows.some((r) => r.channel),
   };
 }
 
