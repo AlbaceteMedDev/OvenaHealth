@@ -39,14 +39,19 @@ async function writeTotals(write, rows, stamp) {
     return { written: await put(rows), missing: [] };
   } catch (err) {
     const text = `${err?.message || ""} ${err?.body || ""}`;
-    const absent = NEW_COLUMNS.filter((c) => text.includes(`'${c}'`) || text.includes(`"${c}"`));
-    if (!absent.length || !/PGRST204|schema cache|does not exist/i.test(text)) throw err;
+    // PostgREST names only the FIRST column it could not find, so retrying
+    // with just that one stripped fails again on the next and the run dies
+    // anyway — which is exactly what happened on the first deploy of this.
+    // Either new column being absent means the migration has not run, so
+    // both come out together and the retry converges.
+    const named = NEW_COLUMNS.some((c) => text.includes(`'${c}'`) || text.includes(`"${c}"`));
+    if (!named || !/PGRST204|schema cache|does not exist/i.test(text)) throw err;
     const trimmed = rows.map((r) => {
       const copy = { ...r };
-      for (const c of absent) delete copy[c];
+      for (const c of NEW_COLUMNS) delete copy[c];
       return copy;
     });
-    return { written: await put(trimmed), missing: absent };
+    return { written: await put(trimmed), missing: [...NEW_COLUMNS] };
   }
 }
 
