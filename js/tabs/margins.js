@@ -3,6 +3,8 @@
 import { seedInventory } from "../data/inventory.js";
 import { fetchSales, salesBySku } from "../data/live.js";
 import { getState, updateRow, subscribe } from "../state.js";
+import { openPostageImport } from "../postage.js";
+import { clearCache } from "../data/live.js";
 import { fmtCurrency, fmtNumber, fmtPercent } from "../format.js";
 
 let panelEl = null;
@@ -40,10 +42,15 @@ export function mountMargins(el) {
         whether the business is profitable. A SKU showing no fee has none recorded, which is not the same as
         selling fee-free.</span></p>
       </div>
-      <div class="segmented" role="group" aria-label="Period">
-        ${[7, 30, 90].map((d) => `<button data-period="${d}" aria-pressed="${d === 30}">${d}d</button>`).join("")}
+      <div class="tab-tools">
+        <div class="segmented" role="group" aria-label="Period">
+          ${[7, 30, 90].map((d) => `<button data-period="${d}" aria-pressed="${d === 30}">${d}d</button>`).join("")}
+        </div>
+        <button class="btn ghost" id="marPostage" type="button"
+                title="Import a carrier print-history export so the P&L charges the postage actually bought">Import shipping labels</button>
       </div>
     </div>
+    <div id="marPostageNote" class="hint" style="margin:0 0 12px;"></div>
 
     <div class="hero" id="marHero"></div>
 
@@ -88,6 +95,18 @@ export function mountMargins(el) {
       </div>
     </div>
   `;
+
+  // Postage import lives here because this is the costs tab — the rates it
+  // supersedes are the ship_to_customer values entered below.
+  el.querySelector("#marPostage").addEventListener("click", () =>
+    openPostageImport((n) => {
+      clearCache();
+      const note = el.querySelector("#marPostageNote");
+      if (note) {
+        note.textContent =
+          `Imported ${n} shipping labels. Overview's P&L now charges the postage actually bought.`;
+      }
+    }));
 
   el.querySelector(".segmented").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-period]");

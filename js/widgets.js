@@ -118,7 +118,13 @@ export const WIDGETS = [
               })}
               ${line("Cost of goods", p.cogs, { note: "supplier invoice, per unit sold", hintKey: "COGS" })}
               ${line("Inbound shipping", p.shipping, { note: "freight to warehouse, per unit sold" })}
-              ${line("Outbound shipping", p.outbound, { note: "warehouse to customer — per shipment, both channels" })}
+              ${line("Outbound shipping", p.outbound, {
+                note: p.postageLabels
+                  ? (p.outboundEstimated > 0
+                      ? `${fmtCurrency(p.outboundActual)} from ${fmtNumber(p.postageLabels)} imported labels, ${fmtCurrency(p.outboundEstimated)} still estimated`
+                      : `measured — ${fmtNumber(p.postageLabels)} labels actually bought`)
+                  : `estimated — ${fmtNumber(p.shipments)} shipments × ${fmtCurrency(p.estimateRate)}, no labels imported`,
+              })}
               ${line("Payment processing", p.payment, { note: "Shopify Payments; Amazon's is inside its referral fee" })}
               ${line("FBA storage", p.storage, { note: "monthly charge, prorated over the window", hintKey: "FBA" })}
               ${line("Amazon account fees", p.amazonCosts, { note: "subscription, service fees and inbound freight, from the settlement ledger" })}
@@ -133,6 +139,14 @@ export const WIDGETS = [
           <div class="body"><strong>No rate on file for ${escapeHtml(p.unset.join(", "))}.</strong>
           Those lines read $0.00 because nothing has been entered, not because they are free —
           so contribution below is higher than reality. Set them on the Margins tab.</div>
+        </div>` : ""}
+        ${!p.postageLabels ? `<div class="insight" style="margin-top:12px;">
+          <div class="ico">!</div>
+          <div class="body"><strong>Outbound shipping is estimated, and estimates of it have run low.</strong>
+          Measured against a real print history for Jul 22 – Aug 26, the same method gave $677.60
+          where $1,860.02 had been paid: the rate was less than half, and the shipment count 27% short
+          because one order is not one label. Import a carrier print-history export on the Margins tab
+          to charge the postage actually bought.</div>
         </div>` : ""}
         ${p.uncosted > 0 ? `<div class="insight" style="margin-top:12px;">
           <div class="ico">!</div>

@@ -442,6 +442,51 @@ export function fetchShopTotals(days) {
   });
 }
 
+// ─── Shipping labels — postage actually bought ───────────────────────
+// Day totals, because the export carries no order id and a label cannot be
+// attributed to an order. Excluded shippers and approved refunds are stored
+// with amount 0, so summing the column is already the right number and no
+// caller has to remember the exclusion rule.
+export function fetchShipLabels(days) {
+  return cached("shipLabels", { days }, async () => {
+    const out = await run(
+      supabase
+        .from("ship_labels")
+        .select("date_printed, amount")
+        .gte("date_printed", startDateFor(days))
+        .order("date_printed", { ascending: true }),
+    );
+    // A missing table (migration 0023 not run) is "no labels imported yet",
+    // not an error worth breaking the dashboard over — the P&L falls back to
+    // the estimate and says so.
+    if (out.error && /ship_labels/.test(out.error)) return { rows: [], error: null };
+    return out;
+  });
+}
+
+// Postage per day, plus the range the import actually covers.
+//
+// The covered range matters as much as the total. A day inside it with no
+// labels genuinely shipped nothing, and must cost zero; a day outside it was
+// never imported, and has to fall back to the estimate. Without that
+// distinction an import of last month would silently zero this month's
+// shipping.
+export function postageByDay(rows) {
+  const byDay = new Map();
+  for (const r of rows) {
+    const d = String(r.date_printed).slice(0, 10);
+    byDay.set(d, (byDay.get(d) || 0) + (Number(r.amount) || 0));
+  }
+  const days = [...byDay.keys()].sort();
+  return {
+    byDay,
+    total: Math.round([...byDay.values()].reduce((a, b) => a + b, 0) * 100) / 100,
+    from: days[0] || null,
+    to: days[days.length - 1] || null,
+    labels: rows.length,
+  };
+}
+
 // ─── Google Merchant Center feed health ──────────────────────────────
 export function fetchGmcStatus() {
   return cached("gmc", {}, async () => {

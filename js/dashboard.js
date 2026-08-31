@@ -22,6 +22,7 @@ import {
   fetchGaChannels, fetchGaLandingPages, rollupGa,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
   daysAvailable, PLATFORM_LABELS, DATA_START, clearCache,
+  fetchShipLabels, postageByDay,
 } from "./data/live.js";
 import { bucketSeries, isPartialBucket } from "./series.js";
 import { seedInventory, skuMap, resolveShopifySku, resolveSku } from "./data/inventory.js";
@@ -305,7 +306,8 @@ async function render() {
   body.innerHTML = loadingBox();
 
   const [amz, shop, shopSales, ads, runs, fba, seoRows, adsBySku, storeCostRows, traffic, amzOrders,
-         seoQueryRows, seoPageRows, gaChannelRows, gaPageRows, savedLayout, amzTxns] = await Promise.all([
+         seoQueryRows, seoPageRows, gaChannelRows, gaPageRows, savedLayout, amzTxns,
+         shipLabels] = await Promise.all([
     fetchSales(period), fetchShopTotals(period), fetchShopSales(period),
     fetchAds(period), fetchSyncStatus(), fetchFbaInventory(),
     fetchSeoSessions(period),
@@ -319,6 +321,7 @@ async function render() {
     fetchGaLandingPages(period),
     layout ? Promise.resolve(layout) : loadLayout(),
     fetchAmzTransactions(period),
+    fetchShipLabels(period),
   ]);
   layout = savedLayout;
 
@@ -498,6 +501,7 @@ async function render() {
     storeCosts: (storeCostRows?.rows || [])[0] || {},
     shopSales,
     amzT, shopT, adT, adM, revenue, bySku, byProduct, amzOrders, amzTxns,
+    postage: postageByDay(shipLabels.rows),
     // Search Console, rolled up across the window. Position is re-weighted
     // by impressions inside rollupSearch — it is an average rank, not a
     // count, so it can never be summed or averaged flat.
@@ -647,7 +651,46 @@ function rebuildInventory() {
   const avgOutbound = rated.length
     ? rated.reduce((a, r) => a + r.shipToCustomer, 0) / rated.length
     : 0;
-  const outbound = (shopShipments + amzShipments) * (Number.isFinite(avgOutbound) ? avgOutbound : 0);
+  const estimateRate = Number.isFinite(avgOutbound) ? avgOutbound : 0;
+  const shipments = shopShipments + amzShipments;
+
+  // ─── Postage: measured where it can be, estimated where it cannot ──
+  //
+  // Everything above this line estimates: shipments counted from orders,
+  // times an average rate. Both inputs were wrong. Against the real print
+  // history for 2026-07-22..08-26 the estimate came to $677.60 where
+  // $1,860.02 had been paid — the rate less than half ($4.40 against $9.38),
+  // and the shipment count 27% low, because one order is not one label. A
+  // multi-box order buys several and a reship buys another, and nothing
+  // derived from the order table can see either.
+  //
+  // So imported labels win wherever they reach. The COVERED RANGE is what
+  // makes that safe: inside it, a day with no labels really shipped nothing
+  // and costs zero; outside it, nothing was imported and the estimate still
+  // stands. Without that distinction, importing last month would silently
+  // zero this month's shipping.
+  const postage = ctx.postage || { byDay: new Map(), from: null, to: null, total: 0, labels: 0 };
+  let outboundActual = 0;
+  let outboundEstimated = 0;
+  let estimatedDays = 0;
+  if (postage.from) {
+    for (const b of ctx.daily) {
+      const day = String(b.key).slice(0, 10);
+      if (day >= postage.from && day <= postage.to) {
+        outboundActual += postage.byDay.get(day) || 0;
+      } else {
+        estimatedDays += 1;
+      }
+    }
+    // Days the import does not reach keep the old estimate, prorated by the
+    // share of shipments those days represent rather than by day count —
+    // shipments are what postage scales with.
+    const share = ctx.daily.length ? estimatedDays / ctx.daily.length : 0;
+    outboundEstimated = shipments * estimateRate * share;
+  } else {
+    outboundEstimated = shipments * estimateRate;
+  }
+  const outbound = Math.round((outboundActual + outboundEstimated) * 100) / 100;
 
   // Payment processing: a percentage of what was actually charged plus a flat
   // amount per order. Amazon's cut is already inside its referral fee.
@@ -694,6 +737,16 @@ function rebuildInventory() {
   ctx.pl = {
     fees, cogs, shipping, outbound, payment, storage, amazonCosts, contribution, uncosted,
     fbaUnitsCharged,
+    // How much of `outbound` is measured and how much is still a guess, so
+    // the P&L can say so rather than presenting one number as if it were all
+    // of one kind.
+    outboundActual: Math.round(outboundActual * 100) / 100,
+    outboundEstimated: Math.round(outboundEstimated * 100) / 100,
+    postageLabels: postage.labels,
+    postageFrom: postage.from,
+    postageTo: postage.to,
+    estimateRate,
+    shipments,
     // Which lines have no rate on file, so the P&L can say "not recorded"
     // instead of showing a $0.00 cost that reads as a fact.
     unset: [

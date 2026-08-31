@@ -38,6 +38,27 @@ export function isExcludedProduct(title) {
   return EXCLUDED_PRODUCT_PATTERNS.some((re) => re.test(title));
 }
 
+// ─── Excluded shippers ───────────────────────────────────────────────
+// Recipients whose shipping labels are not an Ovena cost. StrideCare is a
+// different entity's shipping bought on the same postage account — 10 labels
+// and $124.83 in the 2026-07-22..08-26 export, six of them on 08-11 alone,
+// which is enough to move a month's contribution if it were charged here.
+//
+// Matched case-insensitively against the label's recipient name, the same
+// way EXCLUDED_PRODUCT_PATTERNS matches a product title, so a re-import
+// cannot quietly let one back in.
+//
+// Judgement call worth stating: "Perpetual Knowledge Care Support" (1 label,
+// $13.00) reads like a care facility, which is a customer rather than
+// another business's postage, so it is NOT excluded. Add it here if that is
+// wrong.
+export const EXCLUDED_SHIPPER_PATTERNS = [/stridecare/i];
+
+export function isExcludedShipper(recipient) {
+  if (!recipient) return false;
+  return EXCLUDED_SHIPPER_PATTERNS.some((re) => re.test(recipient));
+}
+
 // ─── Reporting timezone ──────────────────────────────────────────────
 // The calendar day every figure is bucketed into.
 //

@@ -10,6 +10,7 @@
 // the preview; assignments persist in the amazon_sku_map Supabase table.
 
 import { seedInventory, skuMap } from "./data/inventory.js";
+import { splitLine } from "./csv.js";
 import { getRow, updateRow } from "./state.js";
 import { supabase } from "./supabase.js";
 import { fmtNumber } from "./format.js";
@@ -138,29 +139,6 @@ function parseTable(text) {
 }
 
 // Minimal delimited-line splitter with double-quote support.
-function splitLine(line, delim) {
-  const cells = [];
-  let cur = "";
-  let quoted = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (quoted) {
-      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
-      else if (ch === '"') quoted = false;
-      else cur += ch;
-    } else if (ch === '"') {
-      quoted = true;
-    } else if (ch === delim) {
-      cells.push(cur);
-      cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  cells.push(cur);
-  return cells;
-}
-
 async function loadAmazonSkuMap() {
   const { data, error } = await supabase.from("amazon_sku_map").select("amazon_sku, sku");
   // A missing table (migration 0003 not run yet) just means no saved
