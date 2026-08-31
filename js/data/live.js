@@ -416,16 +416,30 @@ export function fetchShopSales(days) {
   });
 }
 
+// `shipping` and `taxes` arrive with migration 0022. Selecting a column that
+// does not exist makes PostgREST reject the WHOLE query, so asking for them
+// against a database that has not had the migration run does not lose the
+// postage figures — it empties the Shopify tab and drops the storefront out
+// of Overview's total revenue entirely. It did exactly that on the first
+// deploy of this. So the columns are dropped and the query retried, which
+// costs one wasted round trip once and nothing at all afterwards.
+const SHOP_TOTALS_BASE = "date, gross_sales, discounts, refunds, net_sales, orders, units, currency";
+const SHOP_TOTALS_NEW = "shipping, taxes";
+
 export function fetchShopTotals(days) {
-  return cached("shopTotals", { days }, () =>
-    run(
-      supabase
-        .from("shop_totals_daily")
-        .select("date, gross_sales, discounts, refunds, net_sales, shipping, taxes, orders, units, currency")
-        .gte("date", startDateFor(days))
-        .order("date", { ascending: true }),
-    ),
-  );
+  return cached("shopTotals", { days }, async () => {
+    const query = (cols) =>
+      run(
+        supabase
+          .from("shop_totals_daily")
+          .select(cols)
+          .gte("date", startDateFor(days))
+          .order("date", { ascending: true }),
+      );
+    const out = await query(`${SHOP_TOTALS_BASE}, ${SHOP_TOTALS_NEW}`);
+    if (!out.error || !/shipping|taxes/.test(out.error)) return out;
+    return query(SHOP_TOTALS_BASE);
+  });
 }
 
 // ─── Google Merchant Center feed health ──────────────────────────────
