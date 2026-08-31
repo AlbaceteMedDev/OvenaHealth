@@ -246,6 +246,7 @@ function wireSyncNow(el) {
     btn.textContent = "Syncing…";
 
     const done = [];
+    const stillRunning = [];
     const failed = [];
     try {
       const { data } = await supabase.auth.getSession();
@@ -253,7 +254,7 @@ function wireSyncNow(el) {
       if (!token) { say("Not signed in — reload the page.", true); return; }
 
       for (const job of jobs) {
-        say(`Pulling ${job} … (${done.length + failed.length + 1} of ${jobs.length})`);
+        say(`Pulling ${job} … (${done.length + stillRunning.length + failed.length + 1} of ${jobs.length})`);
         try {
           const res = await fetch(`/api/sync-now?job=${encodeURIComponent(job)}`, {
             method: "POST",
@@ -268,9 +269,12 @@ function wireSyncNow(el) {
           if (res.ok || res.status === 429 || res.status === 409) done.push(job);
           else failed.push(`${job}: ${body?.error || `HTTP ${res.status}`}`);
         } catch (err) {
-          failed.push(err?.name === "TimeoutError"
-            ? `${job}: still running in the background`
-            : `${job}: ${err.message}`);
+          // The serverless function keeps going after the browser gives up,
+          // and Catchr routinely takes longer than the two minutes waited
+          // here. That is a slow job, not a broken one, so it is reported
+          // apart from the failures and does not raise the warning.
+          if (err?.name === "TimeoutError") stillRunning.push(job);
+          else failed.push(`${job}: ${err.message}`);
         }
       }
 
@@ -279,12 +283,14 @@ function wireSyncNow(el) {
       clearCache();
       await render();
 
-      say(
-        failed.length
-          ? `Synced ${done.join(", ") || "nothing"}. Failed — ${failed.join("; ")}`
-          : `Synced ${done.join(", ")}. Amazon and advertising report 1–3 days behind, so their newest days fill in later.`,
-        failed.length > 0,
-      );
+      say([
+        done.length ? `Synced ${done.join(", ")}.` : null,
+        stillRunning.length
+          ? `${stillRunning.join(", ")} still running on the server — refresh in a minute to see it.`
+          : null,
+        failed.length ? `Failed — ${failed.join("; ")}` : null,
+        failed.length ? null : "Amazon and advertising report 1–3 days behind, so their newest days fill in later.",
+      ].filter(Boolean).join(" "), failed.length > 0);
     } finally {
       btn.disabled = false;
       btn.textContent = original;
