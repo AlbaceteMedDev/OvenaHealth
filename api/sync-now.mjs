@@ -50,7 +50,7 @@ JOBS.searchterms = { run: runSearchTerms, days: 30, label: "search terms" };
 // It re-reads the whole window from DATA_START on every run and prunes what
 // it did not produce, so it is safe to run at any time and never leaves a
 // half-window behind. Cost is one Admin API call per five orders.
-JOBS.shopify = { run: runShopify, days: null, label: "Shopify orders", cooldownMs: 60_000 };
+JOBS.shopify = { run: runShopify, days: null, label: "Shopify orders", cooldownMs: 60_000, maxPerDay: 100 };
 
 // Amazon orders. Exposing this one needs a word, because the handler also
 // accepts an uploaded TSV on POST and a ?rebuild=1 that rewrites history —
@@ -62,10 +62,10 @@ JOBS.shopify = { run: runShopify, days: null, label: "Shopify orders", cooldownM
 // Amazon's own order feed trails Seller Central by a while, so this is
 // closer to "catch up" than to "live" — but it is the difference between a
 // dashboard that is up to 30 minutes stale and one that is not.
-JOBS.orders = { run: runOrders, days: 30, label: "Amazon orders" };
+JOBS.orders = { run: runOrders, days: 30, label: "Amazon orders", maxPerDay: 80 };
 
 // Advertising spend, from Catchr. Reports 1-3 days behind.
-JOBS.catchr = { run: runCatchr, days: 7, label: "advertising" };
+JOBS.catchr = { run: runCatchr, days: 7, label: "advertising", maxPerDay: 80 };
 
 // How long after a finished run the next one is refused. Catchr-backed jobs
 // report 1-3 days behind, so nothing a button does can make them fresher and
@@ -73,6 +73,20 @@ JOBS.catchr = { run: runCatchr, days: 7, label: "advertising" };
 // Shopify is live and free to us, so it overrides this with its own minute.
 const COOLDOWN_MS = 600_000;      // 10 minutes between finished runs
 const INFLIGHT_MS = 300_000;      // a started-but-unfinished run is live this long
+
+// The daily ceiling, and an honest account of what it measures.
+//
+// sync_runs does not record what TRIGGERED a run, so this counts the cron's
+// runs alongside the button's. That is fine for searchterms, whose cron fires
+// four times a day and leaves the whole allowance to people. It is useless
+// for a job on a 30-minute cron: shopify alone logs 48 runs a day, so a flat
+// cap of 12 refused the button permanently — "already synced 48 times today"
+// on the very first press, which is what this default did before the
+// cron-driven jobs were added here.
+//
+// So each job's ceiling sits above its own cron rate, and the real brake on
+// somebody leaning on the button is the cooldown above, which is per-job and
+// which the cron cannot exhaust.
 const MAX_RUNS_PER_DAY = 12;
 
 async function isPortalUser(req) {
@@ -140,9 +154,10 @@ export default async function handler(req, res) {
       "sync_runs",
       `select=started_at&job=eq.${encodeURIComponent(name)}&started_at=gte.${encodeURIComponent(since)}`,
     );
-    if ((today?.length || 0) >= MAX_RUNS_PER_DAY) {
+    const ceiling = job.maxPerDay ?? MAX_RUNS_PER_DAY;
+    if ((today?.length || 0) >= ceiling) {
       res.status(429).json({
-        error: `${job.label} has already synced ${today.length} times today. The scheduled runs will keep it current.`,
+        error: `${job.label} has already synced ${today.length} times today, scheduled runs included. The crons will keep it current.`,
       });
       return;
     }
