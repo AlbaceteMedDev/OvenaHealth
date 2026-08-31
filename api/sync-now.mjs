@@ -27,6 +27,9 @@
 
 import { select } from "./_lib/db.mjs";
 import runSearchTerms from "./sync/searchterms.mjs";
+import runShopify from "./sync/shopify.mjs";
+import runOrders from "./sync/orders.mjs";
+import runCatchr from "./sync/catchr.mjs";
 
 const URL_BASE = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -39,9 +42,35 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const JOBS = Object.create(null);
 JOBS.searchterms = { run: runSearchTerms, days: 30, label: "search terms" };
 
-// Catchr reports search terms 1-3 days behind, so nothing this button does
-// can make the data fresher than that. A short cooldown would buy no real
-// freshness and a lot of billable queries.
+// Shopify is the one source here that is genuinely live: the Admin API
+// returns the order placed a minute ago. Everything else on this dashboard
+// reports on a delay, so this is the only job where "sync now" makes the
+// page newer rather than merely re-fetching the same rows.
+//
+// It re-reads the whole window from DATA_START on every run and prunes what
+// it did not produce, so it is safe to run at any time and never leaves a
+// half-window behind. Cost is one Admin API call per five orders.
+JOBS.shopify = { run: runShopify, days: null, label: "Shopify orders", cooldownMs: 60_000 };
+
+// Amazon orders. Exposing this one needs a word, because the handler also
+// accepts an uploaded TSV on POST and a ?rebuild=1 that rewrites history —
+// neither of which a portal user should be able to reach. They cannot: the
+// request below is built here, not forwarded, so it is always a GET with a
+// fixed query string and no body. Nothing the caller sends reaches it except
+// the choice of job name, which the allowlist has already checked.
+//
+// Amazon's own order feed trails Seller Central by a while, so this is
+// closer to "catch up" than to "live" — but it is the difference between a
+// dashboard that is up to 30 minutes stale and one that is not.
+JOBS.orders = { run: runOrders, days: 30, label: "Amazon orders" };
+
+// Advertising spend, from Catchr. Reports 1-3 days behind.
+JOBS.catchr = { run: runCatchr, days: 7, label: "advertising" };
+
+// How long after a finished run the next one is refused. Catchr-backed jobs
+// report 1-3 days behind, so nothing a button does can make them fresher and
+// a short cooldown would buy no freshness and a lot of billable queries.
+// Shopify is live and free to us, so it overrides this with its own minute.
 const COOLDOWN_MS = 600_000;      // 10 minutes between finished runs
 const INFLIGHT_MS = 300_000;      // a started-but-unfinished run is live this long
 const MAX_RUNS_PER_DAY = 12;
@@ -96,10 +125,11 @@ export default async function handler(req, res) {
       res.status(409).json({ error: `A ${job.label} sync is already running. Give it a moment.` });
       return;
     }
-    if (finished && Date.now() - finished < COOLDOWN_MS) {
-      const wait = Math.ceil((COOLDOWN_MS - (Date.now() - finished)) / 60_000);
+    const cooldown = job.cooldownMs ?? COOLDOWN_MS;
+    if (finished && Date.now() - finished < cooldown) {
+      const wait = Math.max(1, Math.ceil((cooldown - (Date.now() - finished)) / 60_000));
       res.status(429).json({
-        error: `${job.label} synced less than 10 minutes ago. The platforms report 1-3 days behind, so there is nothing newer yet.`,
+        error: `${job.label} synced less than ${Math.round(cooldown / 60_000)} minute(s) ago. Give it a moment.`,
         retryInMinutes: wait,
       });
       return;
@@ -130,10 +160,11 @@ export default async function handler(req, res) {
   };
 
   try {
+    // Built here, never forwarded from the caller. See the note on JOBS.orders.
     await job.run(
       {
         method: "GET",
-        url: `/api/sync/${name}?days=${job.days}`,
+        url: job.days == null ? `/api/sync/${name}` : `/api/sync/${name}?days=${job.days}`,
         headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       },
       proxyRes,

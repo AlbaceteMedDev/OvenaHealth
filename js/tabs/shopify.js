@@ -10,16 +10,21 @@ export const mountShopify = makeDashboard({
   layoutId: "shopify",
   prefix: "shp",
   title: "Shopify",
-  subtitle: "Storefront orders, net of refunds.",
+  subtitle: "Storefront orders, net of refunds. Revenue includes the postage charged; sales tax is not revenue and is excluded.",
   // SEO moved to its own tab. Traffic acquisition and storefront revenue
   // are different questions, and the SEO widgets were the ones being
   // scrolled past here. Overview still sees both.
   groups: ["Shopify", "Operations"],
   platform: null,
+  syncJobs: ["shopify"],
+  // Revenue leads, because it is what the storefront actually took in.
+  // Net sales sits beside it as the product half, and shipping as the half
+  // that used to be missing entirely.
   defaultLayout: [
-    "shop-net", "shop-orders", "shop-refunds",
+    "shop-revenue", "shop-net", "shop-shipping", "shop-orders",
     "shop-by-product-chart", "shop-top-products",
     "shop-by-day",
+    "shop-refunds",
     "sync-status",
   ],
 });

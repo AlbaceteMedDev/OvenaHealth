@@ -13,6 +13,7 @@
 //   groups         widget groups this scope may place
 //   defaultLayout  widget ids shown before anyone customises
 //   platform       ad platform to filter to, or null for all of them
+//   syncJobs       jobs the "Sync now" button pulls, in order; omit for none
 
 import {
   fetchSales, fetchAds, fetchShopSales, fetchShopTotals, fetchSyncStatus, fetchFbaInventory,
@@ -20,7 +21,7 @@ import {
   fetchSeoQueries, fetchSeoPages, rollupSearch,
   fetchGaChannels, fetchGaLandingPages, rollupGa,
   salesTotals, salesBySku, adTotals, adMetrics, shopTotals, shopByProduct,
-  daysAvailable, PLATFORM_LABELS, DATA_START,
+  daysAvailable, PLATFORM_LABELS, DATA_START, clearCache,
 } from "./data/live.js";
 import { bucketSeries, isPartialBucket } from "./series.js";
 import { seedInventory, skuMap, resolveShopifySku, resolveSku } from "./data/inventory.js";
@@ -181,6 +182,8 @@ async function saveLayout() {
         <div class="segmented" role="group" aria-label="Period">${periodButtons(period)}</div>
         <div id="${P}Grain"></div>
         ${exportButton(`${P}Export`)}
+        ${(cfg.syncJobs || []).length ? `<button type="button" class="btn ghost" id="${P}SyncNow"
+                title="Pull the latest orders from the platforms now, then reload this page">Sync now</button>` : ""}
         <button type="button" class="btn" id="${P}Edit">Edit dashboard</button>
       </div>
     </div>
@@ -192,6 +195,7 @@ async function saveLayout() {
   wirePeriod(el, () => period, (v) => { period = v; }, render);
   wireGrain(el, () => grain, (v) => { grain = v; }, render);
   wireExport(el, `${P}Export`, () => ctx?.exportData);
+  wireSyncNow(el);
 
   el.querySelector(`#${P}Edit`).addEventListener("click", () => {
     editing = !editing;
@@ -209,6 +213,83 @@ async function saveLayout() {
       wiredResize = true;
       window.addEventListener("resize", debounce(() => drawAll(), 150));
     }
+}
+
+// ─── Sync now ────────────────────────────────────────────────────────
+//
+// A sync is not a refresh. Reloading re-reads Supabase; this asks the
+// platforms for new data first, then re-reads.
+//
+// Worth having on Overview specifically because Shopify is live: the Admin
+// API will return an order placed a minute ago, while the cron that loads it
+// runs on the half hour. Between runs this page can be up to thirty minutes
+// behind a storefront sale, and no amount of reloading closes that gap.
+//
+// The jobs run one at a time, not in parallel. Each sync deletes and
+// re-inserts its own rows, they share a connection and a function timeout,
+// and a partial failure is far easier to read when the jobs are ordered.
+// Shopify goes first because it is the fastest and the one being waited on.
+function wireSyncNow(el) {
+  const btn = el.querySelector(`#${P}SyncNow`);
+  if (!btn) return;
+  const jobs = cfg.syncJobs || [];
+
+  const say = (text, warn) => {
+    const line = panelEl?.querySelector(`#${P}Sync`);
+    if (line) line.innerHTML = `<div class="syncline">${warn ? "⚠️ " : ""}${escapeHtml(text)}</div>`;
+  };
+
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Syncing…";
+
+    const done = [];
+    const failed = [];
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) { say("Not signed in — reload the page.", true); return; }
+
+      for (const job of jobs) {
+        say(`Pulling ${job} … (${done.length + failed.length + 1} of ${jobs.length})`);
+        try {
+          const res = await fetch(`/api/sync-now?job=${encodeURIComponent(job)}`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}` },
+            // The function keeps running after the browser gives up, so a
+            // timeout is reported as still running, never as failed.
+            signal: AbortSignal.timeout(120_000),
+          });
+          const body = await res.json().catch(() => null);
+          // 429 and 409 are the rate limits working: this job is already as
+          // fresh as it can be. That is a success for the button's purpose.
+          if (res.ok || res.status === 429 || res.status === 409) done.push(job);
+          else failed.push(`${job}: ${body?.error || `HTTP ${res.status}`}`);
+        } catch (err) {
+          failed.push(err?.name === "TimeoutError"
+            ? `${job}: still running in the background`
+            : `${job}: ${err.message}`);
+        }
+      }
+
+      // Without this the 60-second read cache returns the pre-sync rows and a
+      // successful sync looks like it did nothing.
+      clearCache();
+      await render();
+
+      say(
+        failed.length
+          ? `Synced ${done.join(", ") || "nothing"}. Failed — ${failed.join("; ")}`
+          : `Synced ${done.join(", ")}. Amazon and advertising report 1–3 days behind, so their newest days fill in later.`,
+        failed.length > 0,
+      );
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
 }
 
 // ─── Data ────────────────────────────────────────────────────────────
@@ -254,7 +335,10 @@ async function render() {
   // is not Amazon's. Everything downstream reads adRows, never ads.rows.
   const adRows = cfg.platform ? ads.rows.filter((r) => r.platform === cfg.platform) : ads.rows;
   const adT = adTotals(adRows);
-  const revenue = amzT.revenue + shopT.net;
+  // Storefront revenue is product PLUS postage. Charging outbound shipping as
+  // a cost below while counting none of what the customer paid toward it read
+  // $195.86 low across 2026-07-19..08-30 — see migration 0022.
+  const revenue = amzT.revenue + shopT.revenue;
   const adM = adMetrics(adT, revenue);
   const bySku = salesBySku(amz.rows);
   const byProduct = shopByProduct(shopSales.rows);
@@ -355,7 +439,10 @@ async function render() {
   // traffic is not obtainable from any source anyway. See migration 0018.
   fold(traffic.rows, (r) => ({ sessions: r.sessions || 0, pageViews: r.page_views || 0 }),
        ["sessions", "pageViews"]);
-  fold(shop.rows, (r) => ({ shopify: Number(r.net_sales) || 0 }), ["shopify"]);
+  // Product plus the postage the customer paid, matching the Shopify half of
+  // the total-revenue KPI. Charting net alone while the KPI counted postage
+  // would leave the two disagreeing by the shipping line.
+  fold(shop.rows, (r) => ({ shopify: (Number(r.net_sales) || 0) + (Number(r.shipping) || 0) }), ["shopify"]);
   fold(adRows, (r) => ({ spend: Number(r.cost) || 0 }), ["spend"]);
   const daily = [...merged.values()].sort((a, b) => (a.key < b.key ? -1 : 1)).map((d) => {
     const partial = isPartialBucket(d.key, grain, DATA_START, todayIso);
@@ -426,13 +513,13 @@ async function render() {
       name: "overview", grain,
       rows: daily.map((d) => ({
         bucket: d.label, key: d.key, partial: d.partial ? "yes" : "",
-        amazon: d.amazon.toFixed(2), shopify_net: d.shopify.toFixed(2),
+        amazon: d.amazon.toFixed(2), shopify_revenue: d.shopify.toFixed(2),
         total_revenue: d.revenue.toFixed(2), ad_spend: d.spend.toFixed(2),
         tacos: d.revenue > 0 ? ((d.spend / d.revenue) * 100).toFixed(1) + "%" : "",
       })),
       columns: [
         { key: "bucket", label: grain }, { key: "key", label: "key" }, { key: "partial", label: "partial_bucket" },
-        { key: "amazon", label: "amazon_ordered_sales" }, { key: "shopify_net", label: "shopify_net_sales" },
+        { key: "amazon", label: "amazon_ordered_sales" }, { key: "shopify_revenue", label: "shopify_revenue_incl_shipping" },
         { key: "total_revenue", label: "total_revenue" }, { key: "ad_spend", label: "ad_spend" }, { key: "tacos", label: "tacos" },
       ],
     },
@@ -556,10 +643,16 @@ function rebuildInventory() {
     : 0;
   const outbound = (shopShipments + amzShipments) * (Number.isFinite(avgOutbound) ? avgOutbound : 0);
 
-  // Payment processing: a percentage of Shopify net plus a flat amount per
-  // order. Amazon's cut is already inside its referral fee.
+  // Payment processing: a percentage of what was actually charged plus a flat
+  // amount per order. Amazon's cut is already inside its referral fee.
+  //
+  // The percentage is taken on the whole charge — product, postage AND tax —
+  // because that is what the processor bills on. Taking it on product alone
+  // understated the fee, which is the same asymmetry the revenue line had,
+  // pointing the other way.
   const sc = ctx.storeCosts || {};
-  const payment = (ctx.shopT.net || 0) * (Number(sc.payment_fee_pct) || 0)
+  const charged = (ctx.shopT.net || 0) + (ctx.shopT.shipping || 0) + (ctx.shopT.taxes || 0);
+  const payment = charged * (Number(sc.payment_fee_pct) || 0)
                 + (ctx.shopT.orders || 0) * (Number(sc.payment_fee_flat) || 0);
 
   // Storage is a monthly charge, prorated across the window being viewed.
