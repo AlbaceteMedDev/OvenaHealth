@@ -14,6 +14,42 @@ import { upsert, replaceAll, startRun, finishRun } from "../_lib/db.mjs";
 import { DATA_START, isExcludedProduct, REPORT_TZ } from "../../js/config.js";
 import { authorized, UNAUTHORIZED } from "../_lib/auth.mjs";
 
+// Columns migration 0022 adds.
+const NEW_COLUMNS = ["shipping", "taxes"];
+
+// Write the day totals, surviving a database that has not had migration 0022
+// run against it yet.
+//
+// PostgREST rejects the WHOLE batch with PGRST204 if a single column is not
+// in its schema cache, so pushing this code before the migration would not
+// merely lose the postage figures — it would stop the Shopify sync writing
+// anything at all, on a 30-minute cron, until someone noticed. Deploy order
+// should not be able to break a working pipeline, so an unknown column is
+// retried once without the new fields and reported. It heals itself on the
+// first run after the migration lands.
+//
+// Returns { written, missing } rather than setting anything module-level: a
+// warm lambda can serve two invocations, and a shared "which columns were
+// missing" would be exactly the kind of state that reports one run's problem
+// against another run's numbers.
+async function writeTotals(write, rows, stamp) {
+  const put = (r) => (stamp ? write("shop_totals_daily", r, "date", stamp)
+                            : write("shop_totals_daily", r, "date"));
+  try {
+    return { written: await put(rows), missing: [] };
+  } catch (err) {
+    const text = `${err?.message || ""} ${err?.body || ""}`;
+    const absent = NEW_COLUMNS.filter((c) => text.includes(`'${c}'`) || text.includes(`"${c}"`));
+    if (!absent.length || !/PGRST204|schema cache|does not exist/i.test(text)) throw err;
+    const trimmed = rows.map((r) => {
+      const copy = { ...r };
+      for (const c of absent) delete copy[c];
+      return copy;
+    });
+    return { written: await put(trimmed), missing: absent };
+  }
+}
+
 export default async function handler(req, res) {
   if (!authorized(req)) {
     res.status(401).json({ error: UNAUTHORIZED });
@@ -39,7 +75,7 @@ export default async function handler(req, res) {
 
   try {
     const orders = await fetchOrdersSince(since);
-    const { productRows, totalRows, excludedLines } = shapeOrders(orders, {
+    const { productRows, totalRows, excludedLines, renamedProducts } = shapeOrders(orders, {
       isExcluded: isExcludedProduct,
       timeZone: process.env.REPORT_TIMEZONE || REPORT_TZ,
     });
@@ -65,13 +101,17 @@ export default async function handler(req, res) {
     const fullWindow = since === DATA_START;
 
     let written = 0;
+    let degraded = null;
     if (!dry) {
-      if (fullWindow) {
-        written += await replaceAll("shop_sales_daily", productRows, "date,product_title,variant_title", stamp);
-        written += await replaceAll("shop_totals_daily", totalRows, "date", stamp);
-      } else {
-        written += await upsert("shop_sales_daily", productRows, "date,product_title,variant_title");
-        written += await upsert("shop_totals_daily", totalRows, "date");
+      const write = fullWindow ? replaceAll : upsert;
+      written += fullWindow
+        ? await replaceAll("shop_sales_daily", productRows, "date,product_title,variant_title", stamp)
+        : await upsert("shop_sales_daily", productRows, "date,product_title,variant_title");
+      const totals = await writeTotals(write, totalRows, fullWindow ? stamp : null);
+      written += totals.written;
+      if (totals.missing.length) {
+        degraded = `shop_totals_daily has no ${totals.missing.join(" or ")} column yet — `
+          + "run migration 0022. Postage is not being recorded.";
       }
     }
 
@@ -85,13 +125,27 @@ export default async function handler(req, res) {
       pruned: fullWindow,
       excludedLineItems: excludedLines,
       written,
+      // What the storefront took in, so a run can be checked against
+      // Shopify's own Analytics without opening the database.
+      netSales: Math.round(totalRows.reduce((n, r) => n + r.net_sales, 0) * 100) / 100,
+      shipping: Math.round(totalRows.reduce((n, r) => n + r.shipping, 0) * 100) / 100,
+      taxes: Math.round(totalRows.reduce((n, r) => n + r.taxes, 0) * 100) / 100,
       // Excluding Juzo is designed behaviour, not degradation, and it fires on
       // every run that touches the pre-archive history. Counting it toward the
       // run status made shopify permanently "partial" — 224 of 247 runs — which
       // is what stopped "partial" from meaning anything on this dashboard.
-      notes: excludedLines
-        ? [`${excludedLines} line item(s) excluded by EXCLUDED_PRODUCT_PATTERNS (Juzo)`]
-        : [],
+      notes: [
+        excludedLines
+          ? `${excludedLines} line item(s) excluded by EXCLUDED_PRODUCT_PATTERNS (Juzo)`
+          : null,
+        // Also designed behaviour, but worth saying out loud: it means older
+        // rows are being retitled, and anyone comparing this run's product
+        // names against last week's export should know why they moved.
+        renamedProducts
+          ? `${renamedProducts} line item(s) retitled to their product's current name`
+          : null,
+      ].filter(Boolean),
+      degraded,
       // Truncation IS degradation: those orders' revenue is understated.
       failures: orders.truncatedLineItems?.length
         ? [
@@ -100,7 +154,9 @@ export default async function handler(req, res) {
         : [],
     };
     await finishRun(runId, {
-      status: summary.failures.length ? "partial" : "ok",
+      // A missing column IS degradation — postage is going unrecorded — so it
+      // counts toward the run status, unlike the Juzo exclusion above.
+      status: (summary.failures.length || degraded) ? "partial" : "ok",
       rowsWritten: written,
       detail: summary,
     });

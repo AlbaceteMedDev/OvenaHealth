@@ -67,8 +67,11 @@ export const WIDGETS = [
   // ── Headline ──────────────────────────────────────────────────────
   {
     id: "total-revenue", title: "Total revenue", group: "Headline", size: "kpi", spans: [3, 4, 6],
+    // The two halves must add to the headline. Shopify's half is revenue —
+    // product plus postage — not net product sales, which is what it showed
+    // while the total already included the postage.
     render: (c, span) => kpiHtml(term("Total revenue"), fmtCurrency(c.revenue),
-      `${fmtCurrency(c.amzT.revenue)} Amazon · ${fmtCurrency(c.shopT.net)} Shopify`),
+      `${fmtCurrency(c.amzT.revenue)} Amazon · ${fmtCurrency(c.shopT.revenue)} Shopify`),
   },
   {
     id: "net-profit", title: "Net profit", group: "Headline", size: "kpi", spans: [3, 4, 6],
@@ -105,6 +108,7 @@ export const WIDGETS = [
             <tbody>
               ${line("Amazon ordered sales", c.amzT.revenue, { kind: "in", note: `${fmtNumber(c.amzT.units)} units`, hintKey: "ORDERED PRODUCT SALES" })}
               ${line("Shopify net sales", c.shopT.net, { kind: "in", note: `${fmtNumber(c.shopT.orders)} orders`, hintKey: "NET SALES" })}
+              ${line("Shopify shipping charged", c.shopT.shipping, { kind: "in", note: "postage paid by the customer — offsets outbound shipping below" })}
               ${line("Total revenue", c.revenue, { kind: "in", strong: true })}
               ${line("Amazon fees", p.fees, {
                 note: p.fbaUnitsCharged
@@ -371,9 +375,12 @@ export const WIDGETS = [
         <td class="muted">${escapeHtml(d.label)}</td>
         <td class="num"><strong>${fmtCurrency(d.shopify)}</strong></td>
       </tr>`);
+      // c.daily.shopify is product plus postage, so the column is revenue —
+      // it was labelled "net sales" while charting the same figure.
       return card("Shopify by day", table(
-        [{ label: "Date" }, { label: "Net sales", num: true, hint: "NET SALES" }],
-        rows, { span, empty: "No storefront sales in this window." }), { flush: true, foot: "most recent first" });
+        [{ label: "Date" }, { label: "Revenue", num: true }],
+        rows, { span, empty: "No storefront sales in this window." }),
+        { flush: true, foot: "most recent first — product plus shipping charged" });
     },
   },
 
@@ -381,7 +388,21 @@ export const WIDGETS = [
   {
     id: "shop-net", title: "Shopify net sales", group: "Shopify", size: "kpi", spans: [3, 4, 6],
     render: (c, span) => kpiHtml(term("Shopify net", "NET SALES"), fmtCurrency(c.shopT.net),
-      `${fmtCurrency(c.shopT.gross)} gross`),
+      `${fmtCurrency(c.shopT.gross)} gross · product only`),
+  },
+  {
+    // Postage was invisible here until 2026-08-31 while the P&L was charging
+    // the cost of it, so the storefront looked less profitable than it is.
+    id: "shop-revenue", title: "Shopify revenue", group: "Shopify", size: "kpi", spans: [3, 4, 6],
+    render: (c, span) => kpiHtml("Storefront revenue", fmtCurrency(c.shopT.revenue),
+      `${fmtCurrency(c.shopT.net)} product + ${fmtCurrency(c.shopT.shipping)} shipping`),
+  },
+  {
+    id: "shop-shipping", title: "Shopify shipping charged", group: "Shopify", size: "kpi", spans: [3, 4, 6],
+    render: (c, span) => kpiHtml("Shipping charged", fmtCurrency(c.shopT.shipping),
+      c.shopT.orders
+        ? `${fmtCurrency(c.shopT.shipping / c.shopT.orders)} per order${c.shopT.taxes ? ` · ${fmtCurrency(c.shopT.taxes)} tax collected` : ""}`
+        : "no orders"),
   },
   {
     id: "shop-orders", title: "Shopify orders", group: "Shopify", size: "kpi", spans: [3, 4, 6],

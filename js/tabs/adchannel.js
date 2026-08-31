@@ -59,7 +59,9 @@ export function makeAdChannelTab({ platform, title, blurb, notConnected, extraBl
 
     const available = daysAvailable();
     const t = adTotals(rows);
-    const storeNet = shopTotals(shop.rows).net;
+    // What the storefront took in, postage included — an ad drives the whole
+    // order, not just its product lines.
+    const storeNet = shopTotals(shop.rows).revenue;
     const m = adMetrics(t, storeNet);
 
     const todayIso = todayInReportTz();   // the store's day, not UTC's

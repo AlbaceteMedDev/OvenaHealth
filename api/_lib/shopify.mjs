@@ -129,17 +129,19 @@ async function graphql(query, variables = {}) {
 // ─── Page sizes are cost-bound, not taste ────────────────────────────
 // Shopify rejects a query whose *requested* cost exceeds 1000 points,
 // before it executes. Connections cost `2 + first x nodeCost`, and the
-// nesting multiplies: each LineItem here is ~6 points (two MoneyBags at 2
-// each, product at 1, the node itself at 1), so
+// nesting multiplies: each LineItem here is ~8 points (three MoneyBags at 2
+// each, product at 1, the node itself at 1), and the order node now carries
+// three MoneyBags of its own, so
 //
-//   orders(first:N) = 2 + N x (1 + 2 + N_line x 6)
+//   orders(first:N) = 2 + N x (1 + 6 + 2 + N_line x 8)
 //
 // An earlier draft used first:50 / first:100, which prices at roughly
 // 30,000 points — every single sync would have failed with
-// MAX_COST_EXCEEDED. At 5 / 15 the request costs ~467, a comfortable
+// MAX_COST_EXCEEDED. At 5 / 15 the request costs ~690, a comfortable
 // margin under the cap even if Shopify's node accounting differs from the
 // estimate above. Smaller pages just mean more round trips, and this store
-// has fewer than a hundred orders in the reporting window.
+// has fewer than a hundred orders in the reporting window. Measured against
+// the live store on 2026-08-31 at these sizes: accepted, no throttle.
 const ORDER_PAGE_SIZE = 5;
 const LINE_ITEM_PAGE_SIZE = 15;
 
@@ -155,6 +157,9 @@ const ORDERS_QUERY = `
           cancelledAt
           currencyCode
           sourceName
+          currentSubtotalPriceSet { shopMoney { amount } }
+          currentTotalTaxSet { shopMoney { amount } }
+          currentTotalPriceSet { shopMoney { amount } }
           lineItems(first: $linePage) {
             pageInfo { hasNextPage }
             edges {
@@ -165,6 +170,7 @@ const ORDERS_QUERY = `
                 currentQuantity
                 originalTotalSet { shopMoney { amount } }
                 discountedTotalSet { shopMoney { amount } }
+                discountedUnitPriceAfterAllDiscountsSet { shopMoney { amount } }
                 product { id }
               }
             }
@@ -240,7 +246,46 @@ export async function fetchOrdersSince(sinceIso) {
 // `isExcluded(title)` drops line items we don't want counted anywhere —
 // currently the discontinued Juzo listings. Excluded lines are removed
 // before totals are computed, so an order containing only excluded items
-// contributes nothing at all (not even to the order count).
+// contributes nothing at all (not even to the order count, or its postage).
+//
+// ─── Three things this function used to get wrong ────────────────────
+//
+// 1. ORDER-LEVEL DISCOUNTS WERE INVISIBLE. `discountedTotalSet` stops at
+//    line-level discounts; a discount applied to the ORDER is held in the
+//    line's discountAllocations and never reaches that field. Order
+//    #100110971000 — tagged "Collab Gift", 100% off, $0.00 collected —
+//    was therefore booked as $37.98 of revenue, and #100111711000 was
+//    booked $1.59 high. `discountedUnitPriceAfterAllDiscountsSet` is the
+//    one field that has seen every discount, so net is computed from it.
+//    It is a UNIT price, so it multiplies by quantity rather than being
+//    scaled — which also retires the old currentQuantity/quantity ratio.
+//
+// 2. SHIPPING REVENUE WAS DROPPED ENTIRELY. Customers paid $195.86 of
+//    postage over 2026-07-19..08-30 that appeared nowhere, while the P&L
+//    charged outbound postage as a cost on every one of those orders. It
+//    is NOT derived from totalShippingPriceSet, which ignores both refunds
+//    and free-shipping discounts: that field says $8.00 for the Juzo order
+//    whose shipping was discounted to nothing. The money actually still
+//    owed for shipping is what is left of the order once product and tax
+//    are taken out, and only the `current*` fields are net of refunds:
+//
+//      shipping = currentTotalPrice - currentSubtotalPrice - currentTotalTax
+//
+//    Checked against Shopify's own analytics on every all-storefront day in
+//    the window (Aug 28/29/30: 17.71, 24.62, 17.53) — exact to the cent.
+//
+// 3. A RENAMED PRODUCT BECAME TWO PRODUCTS. shop_sales_daily is keyed on
+//    the title, so when "Medical-Grade Hydrocolloid Roll, Cut-to-Size"
+//    became "Hydrocolloid Roll, Cut-to-Size" its history split in half and
+//    the top-products ranking put the store's best seller second. Rows are
+//    now titled by the product's CURRENT name — resolved through the
+//    Shopify product id, which does not change when the name does. Titles
+//    with no product id (deleted products) keep their own name, since
+//    there is nothing to resolve them to.
+//
+// Tax is recorded but is never revenue: it is collected on the state's
+// behalf and remitted. It is stored so the storefront's deposits can be
+// reconciled, not so anything can add it to a top line.
 export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC" } = {}) {
   const dayFmt = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -249,11 +294,22 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
     day: "2-digit",
   });
 
+  // Pass one: the current name of every product id. Orders arrive oldest
+  // first, so the last title seen for an id is the newest one.
+  const currentTitle = new Map();
+  for (const order of orders) {
+    if (order.cancelledAt) continue;
+    for (const edge of order.lineItems?.edges || []) {
+      const id = edge.node?.product?.id;
+      if (id && edge.node.title) currentTitle.set(id, edge.node.title);
+    }
+  }
+
   const products = new Map();
   const totals = new Map();
   let excludedLines = 0;
-
   let marketplaceOrders = 0;
+  let renamedProducts = 0;
 
   for (const order of orders) {
     if (order.cancelledAt) continue;
@@ -279,17 +335,25 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
       const qty = Number(li.quantity) || 0;
       const netQty = Number(li.currentQuantity ?? qty) || 0;
       const gross = money(li.originalTotalSet);
-      const discounted = money(li.discountedTotalSet);
-      // Refunds are expressed by currentQuantity dropping, so scale the
-      // discounted total by the share of units still standing.
-      const net = qty > 0 ? discounted * (netQty / qty) : 0;
+      // After EVERY discount, order-level ones included. Falls back to the
+      // line-level total if Shopify ever stops returning it, which restores
+      // the old under-reporting of discounts rather than zeroing revenue.
+      const unitAfterAll = li.discountedUnitPriceAfterAllDiscountsSet
+        ? money(li.discountedUnitPriceAfterAllDiscountsSet)
+        : (qty > 0 ? money(li.discountedTotalSet) / qty : 0);
+      const discounted = unitAfterAll * qty;
+      const net = unitAfterAll * netQty;
 
-      const key = `${date}|${li.title}|${li.variantTitle || ""}`;
+      const productId = li.product?.id || null;
+      const title = (productId && currentTitle.get(productId)) || li.title || "";
+      if (productId && li.title && title !== li.title) renamedProducts += 1;
+
+      const key = `${date}|${title}|${li.variantTitle || ""}`;
       const slot = products.get(key) || {
         date,
-        product_title: li.title || "",
+        product_title: title,
         variant_title: li.variantTitle || "",
-        product_id: li.product?.id || null,
+        product_id: productId,
         gross_sales: 0,
         discounts: 0,
         net_sales: 0,
@@ -297,13 +361,18 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
         net_quantity: 0,
         orders: 0,
         currency,
+        _orderIds: new Set(),
       };
       slot.gross_sales += gross;
       slot.discounts += gross - discounted;
       slot.net_sales += net;
       slot.quantity += qty;
       slot.net_quantity += netQty;
-      slot.orders += 1;
+      // Distinct orders, not line items. A two-variant order used to count
+      // twice here, which is how "Collagen Kit" claimed three orders from
+      // the two it was actually in.
+      slot._orderIds.add(order.id || order.name);
+      slot.orders = slot._orderIds.size;
       products.set(key, slot);
 
       const t = totals.get(date) || {
@@ -312,6 +381,8 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
         discounts: 0,
         refunds: 0,
         net_sales: 0,
+        shipping: 0,
+        taxes: 0,
         orders: 0,
         units: 0,
         currency,
@@ -323,6 +394,11 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
       t.units += netQty;
       if (!orderCounted) {
         t.orders += 1;
+        // Postage and tax belong to the order, not to any one line, so they
+        // are added exactly once — and only for an order that survived the
+        // exclusions, so a Juzo-only order brings no shipping with it.
+        t.shipping += orderShipping(order);
+        t.taxes += money(order.currentTotalTaxSet);
         orderCounted = true;
       }
       totals.set(date, t);
@@ -335,7 +411,8 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
   return {
     excludedLines,
     marketplaceOrders,
-    productRows: [...products.values()].map((r) => ({
+    renamedProducts,
+    productRows: [...products.values()].map(({ _orderIds, ...r }) => ({
       ...r,
       gross_sales: round(r.gross_sales),
       discounts: round(r.discounts),
@@ -348,9 +425,23 @@ export function shapeOrders(orders, { isExcluded = () => false, timeZone = "UTC"
       discounts: round(r.discounts),
       refunds: round(r.refunds),
       net_sales: round(r.net_sales),
+      shipping: round(r.shipping),
+      taxes: round(r.taxes),
       synced_at: stamp,
     })),
   };
+}
+
+// What the customer is still paying for postage, net of refunds and of any
+// free-shipping discount. See note 2 on shapeOrders for why this is derived
+// rather than read from totalShippingPriceSet. Clamped at zero: a
+// shipping-only refund can briefly make the arithmetic negative, and a
+// negative postage line would read as a cost rather than as a refund.
+export function orderShipping(order) {
+  const total = money(order.currentTotalPriceSet);
+  const subtotal = money(order.currentSubtotalPriceSet);
+  const tax = money(order.currentTotalTaxSet);
+  return Math.max(0, Math.round((total - subtotal - tax) * 100) / 100);
 }
 
 

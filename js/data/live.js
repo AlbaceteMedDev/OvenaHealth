@@ -421,7 +421,7 @@ export function fetchShopTotals(days) {
     run(
       supabase
         .from("shop_totals_daily")
-        .select("date, gross_sales, discounts, refunds, net_sales, orders, units, currency")
+        .select("date, gross_sales, discounts, refunds, net_sales, shipping, taxes, orders, units, currency")
         .gte("date", startDateFor(days))
         .order("date", { ascending: true }),
     ),
@@ -573,19 +573,32 @@ export function salesTotals(rows, trafficRows = []) {
 
 // ─── Shopify shaping ─────────────────────────────────────────────────
 
+// `net` is product revenue. `revenue` is what the storefront actually took
+// in — product plus the postage the customer paid for. They are kept apart
+// because product net is the number that belongs beside COGS and beside
+// Amazon's ordered-product sales, while revenue is the number that belongs
+// in the P&L, which charges outbound postage as a cost.
+//
+// `taxes` is neither. It is collected for the state and remitted, so it is
+// carried here only so deposits can be reconciled — never added to a top
+// line. Migration 0022 added both columns; rows written before it read 0.
 export function shopTotals(rows) {
-  return rows.reduce(
+  const t = rows.reduce(
     (acc, r) => {
       acc.gross += Number(r.gross_sales) || 0;
       acc.discounts += Number(r.discounts) || 0;
       acc.refunds += Number(r.refunds) || 0;
       acc.net += Number(r.net_sales) || 0;
+      acc.shipping += Number(r.shipping) || 0;
+      acc.taxes += Number(r.taxes) || 0;
       acc.orders += r.orders || 0;
       acc.units += r.units || 0;
       return acc;
     },
-    { gross: 0, discounts: 0, refunds: 0, net: 0, orders: 0, units: 0 },
+    { gross: 0, discounts: 0, refunds: 0, net: 0, shipping: 0, taxes: 0, orders: 0, units: 0 },
   );
+  t.revenue = t.net + t.shipping;
+  return t;
 }
 
 // Roll product rows up per product, folding variants together. Sorted by
