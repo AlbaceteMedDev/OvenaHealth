@@ -29,8 +29,20 @@ export const DATA_START = "2026-07-19";
 // all in Jul 6–21). Their revenue is stripped from every channel tab so
 // product mix and totals reflect the Ovena Health line only.
 //
-// Matched case-insensitively against product title. Kept as a pattern
-// rather than a fixed ID list so a re-added Juzo SKU can't slip back in.
+// Matched case-insensitively against the LINE ITEM title as it was recorded
+// on the order, NOT against the product's current title. The distinction is
+// load-bearing and easy to destroy: the four Juzo listings were renamed when
+// they were archived, so product 10351430172951 is now titled "Knee High
+// Compression Socks Closed Toe" with no "Juzo" in it, while the line item on
+// order #100110101000 still reads "Juzo Knee High Compression Socks Closed
+// Toe". Matching the current product title would let that $35 back in, and
+// Shopify's own Analytics reports it under the renamed title, so the two
+// disagree by exactly that amount on purpose.
+//
+// Kept as a pattern rather than a fixed ID list so a re-added Juzo SKU can't
+// slip back in — but note the pattern only works while the words survive in
+// the line item. A Juzo product sold under a name that never said "Juzo"
+// would not be caught; exclude it by product id if that ever happens.
 export const EXCLUDED_PRODUCT_PATTERNS = [/juzo/i];
 
 export function isExcludedProduct(title) {
