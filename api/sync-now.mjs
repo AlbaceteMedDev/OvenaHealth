@@ -27,6 +27,7 @@
 
 import { select } from "./_lib/db.mjs";
 import runSearchTerms from "./sync/searchterms.mjs";
+import runGoogleDetail from "./sync/google-detail.mjs";
 import runShopify from "./sync/shopify.mjs";
 import runOrders from "./sync/orders.mjs";
 import runCatchr from "./sync/catchr.mjs";
@@ -41,6 +42,11 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // specifier is not traced. It would have shipped green and 500'd live.
 const JOBS = Object.create(null);
 JOBS.searchterms = { run: runSearchTerms, days: 30, label: "search terms" };
+
+// Google's bid keywords and landing pages. Separate from search terms because
+// Google splits them into different report views that cannot be combined in
+// one request. Same reporting delay, so the same slow cadence.
+JOBS["google-detail"] = { run: runGoogleDetail, days: 30, label: "Google keywords and landing pages" };
 
 // Shopify is the one source here that is genuinely live: the Admin API
 // returns the order placed a minute ago. Everything else on this dashboard

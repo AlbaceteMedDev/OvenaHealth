@@ -265,6 +265,76 @@ export function rollupSearch(rows, key) {
 // nothing. The cap is deliberately generous: 3,400 Google terms and 900
 // Amazon ones appear in a single month, so a low limit would silently hide
 // the long tail rather than the noise.
+// Google's BID keywords and landing pages. Separate tables because Google
+// splits search terms, keywords and landing pages into different report views
+// that cannot be combined in one request — see api/sync/google-detail.mjs.
+//
+// These read PostgREST directly, unlike search terms: migration 0025 creates
+// their read policy in the same file that creates the tables, so they do not
+// repeat the 0021 mistake that left ads_search_terms service-role-only.
+export function fetchGoogleKeywords(days) {
+  return cached("googleKeywords", { days }, () =>
+    run(
+      supabase
+        .from("google_keywords_daily")
+        .select("date, keyword, match_type, campaign_name, ad_group_name, impressions, clicks, cost, conversions, conversion_value")
+        .gte("date", startDateFor(days))
+        .order("cost", { ascending: false })
+        .limit(8000),
+    ),
+  );
+}
+
+export function fetchGoogleLandingPages(days) {
+  return cached("googleLandingPages", { days }, () =>
+    run(
+      supabase
+        .from("google_landing_pages_daily")
+        .select("date, landing_page, campaign_name, impressions, clicks, cost, conversions, conversion_value")
+        .gte("date", startDateFor(days))
+        .order("cost", { ascending: false })
+        .limit(4000),
+    ),
+  );
+}
+
+// Roll daily ad-detail rows up across the window on whichever key the section
+// is grouped by. Everything summed here is a count or an amount, so a plain
+// sum is correct. `extra` collects the secondary dimensions (campaign, ad
+// group, match type) so a row can name them without a second query.
+export function rollupAdRows(rows, keyFn, extraKeys = []) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = keyFn(r);
+    if (!key) continue;
+    const slot = map.get(key) || {
+      key,
+      impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0,
+      extra: Object.fromEntries(extraKeys.map((k) => [k, new Set()])),
+    };
+    slot.impressions += r.impressions || 0;
+    slot.clicks += r.clicks || 0;
+    slot.cost += Number(r.cost) || 0;
+    slot.sales += Number(r.sales ?? r.conversion_value) || 0;
+    slot.orders += Number(r.orders ?? r.conversions) || 0;
+    for (const k of extraKeys) if (r[k]) slot.extra[k].add(r[k]);
+    map.set(key, slot);
+  }
+  return [...map.values()]
+    .map((s) => ({
+      ...s,
+      extra: Object.fromEntries(Object.entries(s.extra).map(([k, v]) => [k, [...v]])),
+      ctr: s.impressions > 0 ? s.clicks / s.impressions : 0,
+      cpc: s.clicks > 0 ? s.cost / s.clicks : 0,
+      // Only meaningful where the platform attributed something. A confident
+      // 0.00x on a platform that reports no conversions at all would read as
+      // a measured failure rather than an absent measurement.
+      acos: s.sales > 0 ? s.cost / s.sales : null,
+      roas: s.cost > 0 && s.sales > 0 ? s.sales / s.cost : null,
+    }))
+    .sort((a, b) => b.cost - a.cost);
+}
+
 // Search terms go through /api/search-terms rather than PostgREST: the
 // table's "auth read" policy has never been created, so a direct read
 // answers zero rows no matter how much data is there. The endpoint runs the

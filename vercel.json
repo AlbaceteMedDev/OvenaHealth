@@ -32,6 +32,10 @@
     {
       "path": "/api/sync/searchterms?days=30",
       "schedule": "50 */6 * * *"
+    },
+    {
+      "path": "/api/sync/google-detail?days=30",
+      "schedule": "55 */6 * * *"
     }
   ],
   "functions": {
