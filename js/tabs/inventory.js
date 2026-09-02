@@ -5,7 +5,7 @@
 // alongside). Until then — or for SKUs Amazon doesn't return — it falls back
 // to the manually-edited number, so the existing workflow keeps working.
 
-import { seedInventory } from "../data/inventory.js";
+import { seedInventory, resolveSku } from "../data/inventory.js";
 import { getState, updateRow, resetQuantities, subscribe } from "../state.js";
 import { fetchFbaInventory, fetchSyncStatus, fetchAmzOrders } from "../data/live.js";
 import { fmtNumber } from "../format.js";
@@ -179,7 +179,11 @@ async function loadFba() {
     if (o.order_status === "Cancelled") continue;
     const day = snapDay.get(o.sku);
     if (!day || o.purchase_day <= day) continue;
-    soldSince.set(o.sku, (soldSince.get(o.sku) || 0) + (o.quantity || 0));
+    // amz_orders carries the SELLER sku ("SOCK-AID-FBA"); the snapshot is
+    // keyed on the catalog sku ("SOCK-AID"). Keyed on the raw value, nothing
+    // ever matched and the decay silently never applied.
+    const cat = resolveSku(o.sku, null)?.sku || o.sku;
+    soldSince.set(cat, (soldSince.get(cat) || 0) + (o.quantity || 0));
   }
 
   const map = new Map();
