@@ -34,9 +34,16 @@ const VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
 // before expiry so a request can never start with a token that dies mid-flight.
 let minted = null;   // { token, expiresAt }
 
+// Precedence, and why it is this way round: when client credentials are set,
+// MINT — a minted token renews itself. The static token is only used when
+// there is nothing to mint with. It used to be the other way, and on Aug 31
+// a 24-hour client_credentials token was pasted into SHOPIFY_ADMIN_TOKEN;
+// it expired on schedule and every Shopify and SEO sync 401'd for a day
+// while the credentials that could have minted a fresh one sat unused.
 async function accessToken() {
-  if (STATIC_TOKEN) return STATIC_TOKEN;
-  if (!CLIENT_ID || !CLIENT_SECRET) {
+  const canMint = !!(CLIENT_ID && CLIENT_SECRET);
+  if (!canMint) {
+    if (STATIC_TOKEN) return STATIC_TOKEN;
     throw new ShopifyError(
       "Set SHOPIFY_ADMIN_TOKEN, or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET to mint one",
     );
@@ -87,15 +94,23 @@ async function graphql(query, variables = {}) {
   if (!isConfigured()) {
     throw new ShopifyError("SHOPIFY_STORE_DOMAIN and a token or client credentials are not set");
   }
-  const token = await accessToken();
-  const res = await fetch(`https://${DOMAIN}/admin/api/${VERSION}/graphql.json`, {
+  let token = await accessToken();
+  const call = (t) => fetch(`https://${DOMAIN}/admin/api/${VERSION}/graphql.json`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "X-Shopify-Access-Token": token,
+      "X-Shopify-Access-Token": t,
     },
     body: JSON.stringify({ query, variables }),
   });
+  let res = await call(token);
+  // A 401 on a cached token means it is dead early — revoked, or the app was
+  // reinstalled. Forget it and try exactly once more with a fresh mint.
+  if (res.status === 401 && minted && CLIENT_ID && CLIENT_SECRET) {
+    minted = null;
+    token = await accessToken();
+    res = await call(token);
+  }
 
   // Read as text first: a throttled or errored Shopify response is not
   // always JSON, and `.json()` swallowing that would turn a diagnosable
@@ -197,6 +212,14 @@ function money(node) {
 // The filter belongs in the query string so the rows never arrive, and
 // shapeOrders() also re-checks sourceName as a backstop in case the search
 // syntax changes under us.
+// The cheapest possible round trip that proves the token works. Used by
+// /api/health?probe=shopify, because "configured" only means the variables
+// are set — a token can be set and dead, and for a day on Sep 1 it was.
+export async function shopName() {
+  const data = await graphql(`{ shop { name myshopifyDomain } }`);
+  return data?.shop || null;
+}
+
 export const NON_WEB_SOURCES = new Set(["amazon", "ebay", "walmart", "etsy"]);
 
 export async function fetchOrdersSince(sinceIso) {

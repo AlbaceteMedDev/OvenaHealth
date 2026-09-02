@@ -20,7 +20,7 @@ import { select } from "./_lib/db.mjs";
 import { authorized } from "./_lib/auth.mjs";
 import { SELLER_ACCOUNTS, AMAZON_ADS_ACCOUNTS, FACEBOOK_ADS_ACCOUNTS, GOOGLE_ADS_ACCOUNTS } from "./_lib/accounts.mjs";
 import { isConfigured as spapiConfigured } from "./_lib/spapi.mjs";
-import { isConfigured as shopifyConfigured } from "./_lib/shopify.mjs";
+import { isConfigured as shopifyConfigured, shopName } from "./_lib/shopify.mjs";
 import { REPORT_TZ } from "../js/config.js";
 
 // Without these the sync cannot run at all.
@@ -81,6 +81,18 @@ export default async function handler(req, res) {
     out.hint =
       `Set ${missing.join(", ")} on the Vercel project, then REDEPLOY — ` +
       "environment variables only reach a new deployment, never a running one.";
+  }
+
+  // ?probe=shopify makes one real call. "configured" only says the variables
+  // exist; this says whether Shopify accepts them right now.
+  const url = new URL(req.url, "http://localhost");
+  if (url.searchParams.get("probe") === "shopify") {
+    try {
+      const shop = await shopName();
+      out.probe = { shopify: { ok: !!shop, shop: shop?.name || null } };
+    } catch (err) {
+      out.probe = { shopify: { ok: false, error: String(err.message).slice(0, 200) } };
+    }
   }
 
   // Configuration status is public; account shape and history are not.
