@@ -38,7 +38,7 @@ const NEGATE = [
   ["compression socks (bare, in Auto)", "$36, 0 orders through Aug 20 — then 3 orders on $49 (73% ACOS) Aug 21–30, against a 52% break-even", "Hold, not negate: watch two more weeks (re-checked " + CHECKED + ")"],
   ["mens compression socks", "$31, 0 orders through Aug 20 — then 4 orders on $41 (36% ACOS) Aug 21–30", "Do NOT negate; harvest as exact (re-checked " + CHECKED + ")"],
   ["pimple patches (patch intent, not roll)", "$24, 0 orders", "Negative exact in both Hydro campaigns"],
-  ["Mighty Patch + FITFEL product targets", "$63, 0 orders", "Pause targets"],
+  ["Mighty Patch + FITFEL product targets (Hydro Roll PT Non Brand)", "$63, 0 orders; the campaign has had no spend since Aug 28 and appears paused already", "Leave paused; confirm in the console (re-checked " + CHECKED + ")"],
   ["collagen wound dressing (inside Auto only)", "$21 in Auto, 0 orders there", "Negative phrase in Auto; keep the Discovery phrase, it converts"],
   ["juven · medias de compresión · sock donner", "$44 combined, 0 orders", "Negative phrase"],
   ["30-40 mmHg · 20 mmHg compression socks men", "newer window: $11.59, 0 orders. Wrong compression class — the product is 20-30", "Negative phrase / exact"],
