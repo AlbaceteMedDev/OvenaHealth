@@ -6,6 +6,10 @@
 import { kpi } from "../ui.js";
 
 const AS_OF = "Aug 30, 2026";
+// Figures below were re-checked against the database on this date; rows that
+// moved carry a note rather than a silent rewrite, so the Aug 30 reasoning
+// stays readable next to what changed.
+const CHECKED = "Sep 2, 2026";
 
 const ECON = [
   // sku, price, cogs, contrib, beAcos, beCpc  (real COGS from Margins; fees at
@@ -75,10 +79,6 @@ const RULES = [
 // exports. Where it contradicts the Aug 30 audit above, this section wins.
 // ---------------------------------------------------------------------------
 const AS_OF_STOREFRONT = "Aug 31, 2026";
-// Figures below were re-checked against the database on this date; rows that
-// moved carry a note rather than a silent rewrite, so the Aug 30 reasoning
-// stays readable next to what changed.
-const CHECKED = "Sep 2, 2026";
 
 const SHIPPED = [
   ["Negative inventory cleared", "Socks M/L/XL sat at \u22125/\u221212/\u22128 and saline at \u22127, all still set to keep selling", "Set to 200. All 56 variants re-checked: none negative"],
