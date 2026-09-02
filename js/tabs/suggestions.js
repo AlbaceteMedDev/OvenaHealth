@@ -12,8 +12,8 @@ const ECON = [
   // standard referral 15% (8% under $10) + FBA $4.66 socks documented,
   // $4.16–4.99 estimated elsewhere)
   ["Compression Socks (M/L/XL)", "$22.49", "$2.70", "$11.76", "52%", "$0.94 at 8% CVR"],
-  ["Sock Aid", "$14.99", "$1.70", "$6.05", "40%", "$0.73 at 12% CVR"],
-  ["Hydro Roll 5 ft", "$8.99", "$1.48", "$2.63", "29%", "$0.21 at 8% CVR"],
+  ["Sock Aid", "$14.99 (6 of 30 units since Aug 29 sold at $17.99)", "$1.70", "$6.05", "40%", "$0.73 at 12% CVR"],
+  ["Hydro Roll 5 ft", "$8.99", "$1.48", "$3.88 (DB FBA fee $3.63; the $4.16 placeholder gave $2.63)", "43%", "$0.31 at 8% CVR"],
   ["Hydro Roll 16 ft", "$14.39", "$3.20", "$4.87", "34%", "$0.39 at 8% CVR"],
   ["Collagen 2x2", "$29.99", "$10.00", "$11.33", "38%", "$0.91 at 8% CVR"],
   ["Collagen 4x4", "$49.99", "$20.25", "$18.08", "36%", "$1.45 at 8% CVR"],
@@ -75,6 +75,10 @@ const RULES = [
 // exports. Where it contradicts the Aug 30 audit above, this section wins.
 // ---------------------------------------------------------------------------
 const AS_OF_STOREFRONT = "Aug 31, 2026";
+// Figures below were re-checked against the database on this date; rows that
+// moved carry a note rather than a silent rewrite, so the Aug 30 reasoning
+// stays readable next to what changed.
+const CHECKED = "Sep 2, 2026";
 
 const SHIPPED = [
   ["Negative inventory cleared", "Socks M/L/XL sat at \u22125/\u221212/\u22128 and saline at \u22127, all still set to keep selling", "Set to 200. All 56 variants re-checked: none negative"],
@@ -129,7 +133,7 @@ export function mountSuggestions(el) {
     </div>
 
     <div class="kpi-grid">
-      ${kpi("Net profit, measured", "−$4,296.46", "all channels since Jul 19", "down")}
+      ${kpi("Net profit, measured", "−$4,296.46 on Aug 30", `Overview shows the live figure; it was −$7,704.48 when re-checked ${CHECKED}`, "down")}
       ${kpi("Break-even TACoS", "≈45%", "at real COGS + full Amazon fees")}
       ${kpi("Amazon TACoS, last 7 days", "81%", "from 158% two weeks ago", "up")}
       ${kpi("Cost per new customer", "≈$27", "98% of ad purchases are new to brand")}
