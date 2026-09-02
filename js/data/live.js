@@ -272,30 +272,33 @@ export function rollupSearch(rows, key) {
 // These read PostgREST directly, unlike search terms: migration 0025 creates
 // their read policy in the same file that creates the tables, so they do not
 // repeat the 0021 mistake that left ads_search_terms service-role-only.
+// The Google detail tables were created with row-level security on and no
+// read policy, so a direct PostgREST read answers an empty 200 — the Google
+// Ads tab rendered "no data" over 1,791 rows. Same door as search terms: prove
+// this session's token, then the endpoint reads with the service key.
+async function viaGoogleDetail(table, days) {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) return { rows: [], error: "Not signed in" };
+    const res = await fetch(
+      `/api/google-detail?table=${table}&days=${encodeURIComponent(days)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return { rows: [], error: body?.error || `HTTP ${res.status}` };
+    return { rows: body?.rows || [], error: null };
+  } catch (err) {
+    return { rows: [], error: err.message };
+  }
+}
+
 export function fetchGoogleKeywords(days) {
-  return cached("googleKeywords", { days }, () =>
-    run(
-      supabase
-        .from("google_keywords_daily")
-        .select("date, keyword, match_type, campaign_name, ad_group_name, impressions, clicks, cost, conversions, conversion_value")
-        .gte("date", startDateFor(days))
-        .order("cost", { ascending: false })
-        .limit(8000),
-    ),
-  );
+  return cached("googleKeywords", { days }, () => viaGoogleDetail("keywords", days));
 }
 
 export function fetchGoogleLandingPages(days) {
-  return cached("googleLandingPages", { days }, () =>
-    run(
-      supabase
-        .from("google_landing_pages_daily")
-        .select("date, landing_page, campaign_name, impressions, clicks, cost, conversions, conversion_value")
-        .gte("date", startDateFor(days))
-        .order("cost", { ascending: false })
-        .limit(4000),
-    ),
-  );
+  return cached("googleLandingPages", { days }, () => viaGoogleDetail("landing", days));
 }
 
 // Roll daily ad-detail rows up across the window on whichever key the section
