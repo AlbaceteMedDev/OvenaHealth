@@ -139,7 +139,9 @@ export const WIDGETS = [
               })}`}
               ${line("Payment processing", p.payment, { note: "Shopify Payments; Amazon's is inside its referral fee" })}
               ${line("FBA storage", p.storage, { note: "monthly charge, prorated over the window", hintKey: "FBA" })}
-              ${line("Amazon account fees", p.amazonCosts, { note: "subscription, service fees and inbound freight, from the settlement ledger" })}
+              ${line("Amazon account fees", p.amazonCosts, { note: p.ledgerTo
+            ? `subscription, service fees and inbound freight — settlement ledger through ${escapeHtml(p.ledgerTo)}, later weeks not yet posted`
+            : "subscription, service fees and inbound freight, from the settlement ledger" })}
               ${line("Contribution margin", p.contribution, { kind: "in", strong: true, hintKey: "CONTRIBUTION MARGIN" })}
               ${line("Advertising", p.adSpend, { note: c.spendByPlatform.map((x) => x.label).join(", ") || "no spend" })}
               ${line(p.net < 0 ? "Net loss" : "Net profit", p.net, { kind: p.net < 0 ? "neg" : "in", strong: true })}
@@ -166,11 +168,11 @@ export const WIDGETS = [
           Their revenue counts here but their COGS and shipping do not, so contribution is overstated.</div>
         </div>` : ""}
         <p class="muted" style="margin:12px 0 0;font-size:12px;">
-          Costs are per unit sold, on both channels. Amazon fees are the rates actually charged on
-          settled orders, not a published fee schedule: merchant-fulfilled units pay referral only,
-          and FBA-fulfilled units pay referral plus fulfilment — the line above says how many units
-          were charged which. Outbound postage is a flat per-parcel estimate, charged once per shipment
-          rather than per unit, until real Stamps.com figures are loaded. Amazon&rsquo;s own account
+          Costs are per unit sold, on both channels. Amazon fees use the published referral schedule
+          (15%, or 8% under $10), checked against the prices actually realised per SKU: merchant-fulfilled
+          units pay referral only, and FBA-fulfilled units pay referral plus fulfilment — the line above
+          says how many units were charged which. Outbound postage comes from imported carrier labels
+          where they cover a day, and a flat per-parcel estimate where they do not. Amazon&rsquo;s own account
           fees — the monthly subscription, service fees and inbound freight to FBA — are period costs
           rather than per-unit, and appear on their own line from the settlement ledger.
         </p>

@@ -735,6 +735,10 @@ function rebuildInventory() {
   }
   // Held as a positive COST so it reads like every other line in the P&L.
   const amazonCosts = -Math.min(0, settlement);
+  // The ledger lags the window: Amazon posts settlements every two weeks and
+  // the sync last saw Aug 16. Say where it stops, or the line reads as if it
+  // covered the whole period.
+  const ledgerTo = (ctx.amzTxns?.rows || []).reduce((m, r) => (r.posted_on > m ? r.posted_on : m), "").slice(0, 10) || null;
 
   const contribution = ctx.revenue - fees - cogs - shipping - outbound - payment - storage - amazonCosts;
   ctx.invRows = invRows;
@@ -742,6 +746,7 @@ function rebuildInventory() {
   ctx.pl = {
     fees, cogs, shipping, outbound, payment, storage, amazonCosts, contribution, uncosted,
     fbaUnitsCharged,
+    ledgerTo,
     // How much of `outbound` is measured and how much is still a guess, so
     // the P&L can say so rather than presenting one number as if it were all
     // of one kind.
