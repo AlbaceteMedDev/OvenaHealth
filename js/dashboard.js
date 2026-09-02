@@ -325,9 +325,19 @@ async function render() {
   ]);
   layout = savedLayout;
 
-  const sync = syncStateFor(runs.rows, "catchr");
-  panelEl.querySelector(`#${P}Badge`).innerHTML = syncBadge(sync);
-  panelEl.querySelector(`#${P}Sync`).innerHTML = syncLine(sync, "Catchr sync");
+  // The badge follows the jobs this tab actually depends on (cfg.syncJobs),
+  // not the ads job for everyone. Hard-coded to catchr, the Shopify tab said
+  // "Live" through a full day of Shopify 401s, because the ads sync was fine.
+  // With several jobs, the worst one wins: a failing feed anywhere here is
+  // not "Live".
+  const JOB_LABELS = { shopify: "Shopify sync", orders: "Amazon orders sync", catchr: "Ad sync" };
+  const RANK = { off: 0, stale: 1, live: 2 };
+  const jobs = (cfg.syncJobs || []).length ? cfg.syncJobs : ["catchr"];
+  const worst = jobs
+    .map((j) => ({ job: j, ...syncStateFor(runs.rows, j) }))
+    .sort((a, b) => RANK[a.state] - RANK[b.state])[0];
+  panelEl.querySelector(`#${P}Badge`).innerHTML = syncBadge(worst);
+  panelEl.querySelector(`#${P}Sync`).innerHTML = syncLine(worst, JOB_LABELS[worst.job] || `${worst.job} sync`);
 
   if (amz.error && shop.error) {
     body.innerHTML = errorBox(amz.error, "Check that migrations 0004 and 0005 have been run in Supabase.");
