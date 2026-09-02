@@ -62,17 +62,39 @@ export async function upsert(table, rows, onConflict, { chunkSize = 500 } = {}) 
   return written;
 }
 
+// Pages through PostgREST. Supabase caps any single response at 1,000 rows
+// (its max-rows setting) no matter what `limit=` asks for, and it does so
+// silently: a query for 8,000 rows gets 1,000 back with a 200. Both the
+// Keywords and Google Ads tabs were built on top of that cap without knowing
+// it — 1,110 keyword rows synced, 1,000 served, and the difference was the
+// cheapest rows, so every total understated. This keeps asking with Range
+// until a page comes back short. A caller's own `limit=` still bounds it.
+const PAGE = 1000;
+const MAX_PAGES = 40;   // 40,000 rows; beyond that the caller should aggregate in SQL
+
 export async function select(table, query = "") {
   assertConfigured();
   const url = `${URL_BASE}/rest/v1/${table}${query ? `?${query}` : ""}`;
-  const res = await fetch(url, { headers: headers() });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new DbError(`select ${table} failed (${res.status}): ${body.slice(0, 400)}`, {
-      status: res.status,
+  const wanted = Number((query.match(/(?:^|&)limit=(\d+)/) || [])[1]) || Infinity;
+  const out = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE;
+    const to = Math.min(from + PAGE, wanted) - 1;
+    if (to < from) break;
+    const res = await fetch(url, {
+      headers: { ...headers(), Range: `${from}-${to}`, "Range-Unit": "items" },
     });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new DbError(`select ${table} failed (${res.status}): ${body.slice(0, 400)}`, {
+        status: res.status,
+      });
+    }
+    const rows = await res.json();
+    out.push(...rows);
+    if (rows.length < to - from + 1 || out.length >= wanted) break;
   }
-  return res.json();
+  return out;
 }
 
 // Replace the whole contents of a table. Used for fba_inventory, which is a
