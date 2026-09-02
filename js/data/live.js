@@ -526,13 +526,24 @@ export function fetchShopTotals(days) {
 // caller has to remember the exclusion rule.
 export function fetchShipLabels(days) {
   return cached("shipLabels", { days }, async () => {
-    const out = await run(
+    const read = (cols) => run(
       supabase
         .from("ship_labels")
-        .select("date_printed, amount, channel")
+        .select(cols)
         .gte("date_printed", startDateFor(days))
         .order("date_printed", { ascending: true }),
     );
+    let out = await read("date_printed, amount, channel");
+    // Before migration 0024 the channel COLUMN is missing, and PostgREST
+    // rejects the whole query for it. That error also mentions ship_labels,
+    // and the table-missing guard below was swallowing it as "no labels
+    // imported" — while 195 labels worth $1,735.19 sat in the table and the
+    // P&L showed a $742.76 estimate. Ask again without the column; every
+    // label then counts as the storefront's, which postageByDay already
+    // reports as unattributed.
+    if (out.error && /column ship_labels\.channel/i.test(out.error)) {
+      out = await read("date_printed, amount");
+    }
     // A missing table (migration 0023 not run) is "no labels imported yet",
     // not an error worth breaking the dashboard over — the P&L falls back to
     // the estimate and says so.
