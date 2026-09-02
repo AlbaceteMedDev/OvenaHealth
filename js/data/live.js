@@ -177,7 +177,7 @@ export function fetchAmzTransactions(days) {
     run(
       supabase
         .from("amz_transactions")
-        .select("posted_on, transaction_type, amazon_order_id, total_amount, amazon_fees, other_amount")
+        .select("posted_on, transaction_type, amazon_order_id, total_amount, amazon_fees, other_amount, product_details")
         .gte("posted_on", startDateFor(days))
         .order("posted_on", { ascending: true }),
     ),

@@ -52,7 +52,7 @@ export function mountKeywords(el) {
     <div class="tab-header">
       <div class="titles">
         <h2>Keywords <span id="${P}Badge"></span></h2>
-        <p>The search terms customers typed before an Ovena ad was shown, with what each one cost and what it sold.</p>
+        <p>The search terms customers typed before an Ovena ad was shown, with what each one cost and what it sold. Google withholds low-volume terms from this report, so Google's total here runs below its campaign spend on the Google Ads tab — the gap is spend on terms Google will not name.</p>
         ${floorNote(DATA_START)}
         <div id="${P}Sync"></div>
       </div>

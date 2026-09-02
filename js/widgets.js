@@ -112,7 +112,7 @@ export const WIDGETS = [
               ${line("Total revenue", c.revenue, { kind: "in", strong: true })}
               ${line("Amazon fees", p.fees, {
                 note: p.fbaUnitsCharged
-                  ? `referral; ${fmtNumber(p.fbaUnitsCharged)} FBA units also charged fulfilment`
+                  ? `referral; ${fmtNumber(p.fbaUnitsCharged)} FBA units also charged fulfilment. Published schedule: on the settlement ledger through Aug 16, merchant-fulfilled referral actually settled at 5–6% on socks and near zero on the 5 ft roll, so this may overstate FBM fees`
                   : "referral, measured from settlement",
                 hintKey: "FBA",
               })}
@@ -442,7 +442,7 @@ export const WIDGETS = [
   {
     id: "shop-refunds", title: "Shopify refunds", group: "Shopify", size: "kpi", spans: [3, 4, 6],
     render: (c, span) => kpiHtml("Refunded", c.shopT.refunds > 0 ? fmtCurrency(c.shopT.refunds) : "$0.00",
-      c.shopT.refunds > 0 ? "reversed after the sale" : "no refunds", c.shopT.refunds > 0 ? "bad" : ""),
+      c.shopT.refunds > 0 ? "product refunds only, reversed after the sale — refunded postage is netted in the shipping line" : "no refunds", c.shopT.refunds > 0 ? "bad" : ""),
   },
   {
     id: "shop-top-products", title: "Top Shopify products", group: "Shopify", size: "half", spans: [4, 6, 8, 12],

@@ -157,7 +157,7 @@ async function loadFba() {
     sync.state === "off" ? "" : syncBadge({ ...sync, label: sync.state === "live" ? "FBA live" : sync.label });
   panelEl.querySelector("#invSync").innerHTML =
     sync.state === "off"
-      ? `<div class="syncline">FBA stock isn't syncing yet — the Amazon column is manual. See <code>docs/SPAPI_SETUP.md</code>.</div>`
+      ? `<div class="syncline">No live FBA feed (SP-API is not connected — see <code>docs/SPAPI_SETUP.md</code>). Where a snapshot was imported, the Amazon column is that snapshot minus units Amazon has shipped since; otherwise it is the manual figure.</div>`
       : syncLine(sync, "FBA sync");
 
   if (fba.error) return;
@@ -177,12 +177,15 @@ async function loadFba() {
   for (const o of orders.rows || []) {
     if (o.fulfillment_channel !== "Amazon") continue;
     if (o.order_status === "Cancelled") continue;
-    const day = snapDay.get(o.sku);
+    // Resolve the seller sku (SOCK-AID-FBA) to the catalog sku BEFORE any
+    // lookup: the snapshot is keyed on the catalog sku, and a lookup on the
+    // raw value never matched — the first fix moved only the second lookup.
+    const cat = resolveSku(o.sku, null)?.sku || o.sku;
+    const day = snapDay.get(cat);
     if (!day || o.purchase_day <= day) continue;
     // amz_orders carries the SELLER sku ("SOCK-AID-FBA"); the snapshot is
     // keyed on the catalog sku ("SOCK-AID"). Keyed on the raw value, nothing
     // ever matched and the decay silently never applied.
-    const cat = resolveSku(o.sku, null)?.sku || o.sku;
     soldSince.set(cat, (soldSince.get(cat) || 0) + (o.quantity || 0));
   }
 

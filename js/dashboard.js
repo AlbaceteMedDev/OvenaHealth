@@ -741,6 +741,10 @@ function rebuildInventory() {
   let settlement = 0;
   for (const r of ctx.amzTxns?.rows || []) {
     if (ORDER_MONEY.has(r.transaction_type)) continue;
+    // Amazon sometimes settles the Ads invoice out of the payout. That spend is
+    // already in ads_daily and charged under Advertising; counting the
+    // settlement row too charged it twice ($13.03 in the full window).
+    if (/cost of advertising/i.test(r.product_details || "")) continue;
     settlement += Number(r.total_amount) || 0;
   }
   // Held as a positive COST so it reads like every other line in the P&L.
