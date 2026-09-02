@@ -15,8 +15,8 @@ const ECON = [
   ["Sock Aid", "$14.99 (6 of 30 units since Aug 29 sold at $17.99)", "$1.70", "$6.05", "40%", "$0.73 at 12% CVR"],
   ["Hydro Roll 5 ft", "$8.99", "$1.48", "$3.88 (DB FBA fee $3.63; the $4.16 placeholder gave $2.63)", "43%", "$0.31 at 8% CVR"],
   ["Hydro Roll 16 ft", "$14.39", "$3.20", "$4.87", "34%", "$0.39 at 8% CVR"],
-  ["Collagen 2x2", "$29.99", "$10.00", "$11.33", "38%", "$0.91 at 8% CVR"],
-  ["Collagen 4x4", "$49.99", "$20.25", "$18.08", "36%", "$1.45 at 8% CVR"],
+  ["Collagen 2x2", "$29.99", "$10.00", "$11.33", "38%", "$0.91 at 8% CVR — collagen campaigns convert at 4–5%, so ≈ $0.50"],
+  ["Collagen 4x4", "$49.99", "$20.25", "$18.08", "36%", "$1.45 at 8% CVR — at the 4–5% the campaigns convert, ≈ $0.80"],
 ];
 
 const HARVEST = [
@@ -25,7 +25,7 @@ const HARVEST = [
   ["compression socks for women / for men", "7 orders combined, 31–52% ACOS", "Exact, bid $1.35–1.40"],
   ["20-30 mmHg phrasing family", "converts across variants", "Exact set, bid $1.50"],
   ["anatomical fit compression socks 20-30 mmhg", "newer window: $2.25 → $67.47, 3% ACOS (3-unit order)", "Exact, bid $1.50"],
-  ["circaid / therafirm / jobst / dynaven / truform", "medical-brand conquest, 24–27% ACOS where it ran", "Exact + product targets, bid $1.60"],
+  ["circaid / therafirm / jobst / dynaven / truform", "as a family 72–73% ACOS (Jul 27–Aug 30); only a few brand terms convert — the 24–27% figure was those terms alone", "Exact on the converting brand terms only, bid $1.60; negate the rest"],
   ["sock aid / sock helper / sock aids / sock assist", "newer window: 7 orders, 29–48% ACOS. The dated report ends the day these campaigns launched", "Exacts at $0.90–1.00"],
   ["compression sock aid / …device / …helper / sock aids for putting on socks", "newer window: 4 more orders at $1–17 spend each", "Exacts at $0.90–1.00"],
   ["wound collagen / puracol plus collagen wound dressing", "3 orders, 15–33% ACOS", "Exact, bid $1.70–1.80"],
@@ -34,9 +34,9 @@ const HARVEST = [
 
 const NEGATE = [
   ["Google: Generic | Wound Care + Generic | Compression + Competitor", "$1,601 spend, $38.98 sales since Jul 19", "Pause the campaigns"],
-  ["hydrocolloid roll · hydrocolloid bandages (on the 5 ft)", "$123 spend, 1 order", "Negative on 5 ft; retest only on the 16 ft"],
-  ["compression socks (bare, in Auto)", "$54, 0 orders", "Negative exact in Auto"],
-  ["mens compression socks", "$31, 0 orders", "Negative exact"],
+  ["hydrocolloid roll · hydrocolloid bandages (on the 5 ft)", "$123 spend, 1 order; Aug 21–30 added 5 orders on $72 at 161% ACOS — still under water", "Negative on 5 ft; retest only on the 16 ft"],
+  ["compression socks (bare, in Auto)", "$36, 0 orders through Aug 20 — then 3 orders on $49 (73% ACOS) Aug 21–30, against a 52% break-even", "Hold, not negate: watch two more weeks (re-checked " + CHECKED + ")"],
+  ["mens compression socks", "$31, 0 orders through Aug 20 — then 4 orders on $41 (36% ACOS) Aug 21–30", "Do NOT negate; harvest as exact (re-checked " + CHECKED + ")"],
   ["pimple patches (patch intent, not roll)", "$24, 0 orders", "Negative exact in both Hydro campaigns"],
   ["Mighty Patch + FITFEL product targets", "$63, 0 orders", "Pause targets"],
   ["collagen wound dressing (inside Auto only)", "$21 in Auto, 0 orders there", "Negative phrase in Auto; keep the Discovery phrase, it converts"],
@@ -248,7 +248,7 @@ export function mountSuggestions(el) {
             ${rows(ECON, (r) => `<td class="ink">${r[0]}</td><td class="num">${r[1]}</td><td class="num">${r[2]}</td><td class="num"><b>${r[3]}</b></td><td class="num"><b>${r[4]}</b></td><td class="num muted">${r[5]}</td>`)}
             <tr><td class="ink">Collagen Powder</td><td class="num">$39.99 list</td><td class="num">$22.60</td>
                 <td class="num"><b>$7.23</b> at list · <span class="val-bad">−$1.26 at $30 ASP</span></td>
-                <td class="num"><b>18%</b></td><td class="num muted">do not advertise until repriced</td></tr>
+                <td class="num"><b>18%</b></td><td class="num muted">the $30 ASP was two mid-August units; every unit since Aug 25 sold at $39.99, so the list-price contribution applies</td></tr>
           </tbody>
         </table>
       </div></div>
