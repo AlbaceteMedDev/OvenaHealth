@@ -177,17 +177,16 @@ async function render() {
     byPlatform.set(r.platform, s);
   }
 
-  const dates = [...new Set(terms.rows.map((r) => r.date))].sort();
+  // Rows arrive already summed across the window, so day coverage comes from
+  // the endpoint's coverage map rather than from a date column.
+  const cov = terms.coverage || {};
+  const firsts = Object.values(cov).map((c) => c.first).filter(Boolean).sort();
+  const lasts = Object.values(cov).map((c) => c.last).filter(Boolean).sort();
   ctx = {
     rolled,
     byPlatform,
-    lastDay: Object.fromEntries(
-      [...byPlatform.keys()].map((p) => [
-        p,
-        terms.rows.filter((r) => r.platform === p).map((r) => r.date).sort().pop() || null,
-      ]),
-    ),
-    covered: dates.length ? { first: dates[0], last: dates[dates.length - 1] } : null,
+    lastDay: Object.fromEntries([...byPlatform.keys()].map((p) => [p, cov[p]?.last || null])),
+    covered: firsts.length ? { first: firsts[0], last: lasts[lasts.length - 1] } : null,
     exportData: {
       name: "search-terms",
       rows: rolled.map((r) => ({

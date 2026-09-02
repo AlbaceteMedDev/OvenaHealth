@@ -167,11 +167,12 @@ export const WIDGETS = [
         </div>` : ""}
         <p class="muted" style="margin:12px 0 0;font-size:12px;">
           Costs are per unit sold, on both channels. Amazon fees are the rates actually charged on
-          settled orders, not a published fee schedule — nearly every order here is merchant-fulfilled,
-          so it pays referral only and no FBA fulfilment. Outbound postage is a flat per-parcel estimate,
-          charged once per shipment rather than per unit, until real Stamps.com figures are loaded. Amazon&rsquo;s own service fees — inbound freight to
-          FBA (&minus;$505.42 net) and the monthly subscription (&minus;$79.98) — are period costs, not
-          per-unit, and are not in this table; they sit in amz_transactions.
+          settled orders, not a published fee schedule: merchant-fulfilled units pay referral only,
+          and FBA-fulfilled units pay referral plus fulfilment — the line above says how many units
+          were charged which. Outbound postage is a flat per-parcel estimate, charged once per shipment
+          rather than per unit, until real Stamps.com figures are loaded. Amazon&rsquo;s own account
+          fees — the monthly subscription, service fees and inbound freight to FBA — are period costs
+          rather than per-unit, and appear on their own line from the settlement ledger.
         </p>
       `, { flush: false });
     },
@@ -252,7 +253,9 @@ export const WIDGETS = [
     render: (c, span) => {
       const rows = c.salesLog.slice(0, rowsFor(span)).map((r) => `<tr>
         <td class="muted">${escapeHtml(fmtShortDate(r.date))}</td>
-        <td><span class="sku-cell">${escapeHtml(r.sku)}</span></td>
+        <td><span class="sku-cell">${escapeHtml(r.sku)}</span>${r.channel === "FBA"
+          ? ` <span class="chip" title="Fulfilled by Amazon. The same SKU can appear twice on one day: once shipped by Amazon, once shipped by Ovena.">FBA</span>`
+          : ""}</td>
         <td>${escapeHtml(r.product)}<div class="muted">${escapeHtml(r.variant)}</div></td>
         <td class="num">${fmtNumber(r.units)}</td>
         <td class="num">${fmtNumber(r.orderItems)}</td>

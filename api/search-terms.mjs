@@ -58,16 +58,48 @@ export default async function handler(req, res) {
 
   const url = new URL(req.url, "http://localhost");
   const days = url.searchParams.get("days") || "30";
-
+  const rollup = url.searchParams.get("rollup") === "1";
+  const since = startDateFor(days);
   try {
-    // Mirrors the PostgREST query the client used to make, column for column.
     const rows = await select(
       "ads_search_terms",
-      "select=date,platform,search_term,keyword,match_type,campaign_name,impressions,clicks,cost,sales,orders,units" +
-        `&date=gte.${startDateFor(days)}&order=cost.desc&limit=8000`,
+      `select=date,platform,search_term,keyword,match_type,campaign_name,impressions,clicks,cost,sales,orders,units&date=gte.${since}&order=date.desc&limit=40000`,
     );
-    res.status(200).json({ rows });
+    res.setHeader("cache-control", "private, max-age=60");
+    if (!rollup) {
+      res.status(200).json({ since, rows });
+      return;
+    }
+    // Sum across days here, where the whole window fits, rather than in the
+    // browser, where it never did: the daily set for 7 days alone is over
+    // 8,000 rows and the client was quietly seeing only the top of it.
+    const byKey = new Map();
+    const coverage = {};
+    for (const r of rows) {
+      const c = coverage[r.platform] || (coverage[r.platform] = { first: r.date, last: r.date, rows: 0 });
+      if (r.date < c.first) c.first = r.date;
+      if (r.date > c.last) c.last = r.date;
+      c.rows++;
+      const k = [r.platform, r.search_term, r.keyword, r.match_type, r.campaign_name].join("\u0000");
+      const slot = byKey.get(k) || {
+        platform: r.platform, search_term: r.search_term, keyword: r.keyword,
+        match_type: r.match_type, campaign_name: r.campaign_name,
+        first_date: r.date, last_date: r.date,
+        impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0, units: 0,
+      };
+      if (r.date < slot.first_date) slot.first_date = r.date;
+      if (r.date > slot.last_date) slot.last_date = r.date;
+      slot.impressions += Number(r.impressions) || 0;
+      slot.clicks += Number(r.clicks) || 0;
+      slot.cost += Number(r.cost) || 0;
+      slot.sales += Number(r.sales) || 0;
+      slot.orders += Number(r.orders) || 0;
+      slot.units += Number(r.units) || 0;
+      byKey.set(k, slot);
+    }
+    res.status(200).json({ since, source_rows: rows.length, coverage, rows: [...byKey.values()] });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("[search-terms]", err);
+    res.status(502).json({ error: "Could not read the search terms." });
   }
 }

@@ -350,12 +350,16 @@ export function fetchSearchTerms(days) {
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token;
       if (!token) return { rows: [], error: "Not signed in" };
-      const res = await fetch(`/api/search-terms?days=${encodeURIComponent(days)}`, {
+      // rollup=1: the endpoint sums each term across the window before
+      // answering. The daily rows for even 7 days ran past 8,000 and the
+      // browser was silently shown the top of the list, so every total here
+      // understated. Coverage (first/last day per platform) comes back with it.
+      const res = await fetch(`/api/search-terms?rollup=1&days=${encodeURIComponent(days)}`, {
         headers: { authorization: `Bearer ${token}` },
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) return { rows: [], error: body?.error || `HTTP ${res.status}` };
-      return { rows: body?.rows || [], error: null };
+      return { rows: body?.rows || [], error: null, coverage: body?.coverage || {}, sourceRows: body?.source_rows || 0 };
     } catch (err) {
       return { rows: [], error: err.message };
     }

@@ -418,6 +418,11 @@ async function render() {
       const cat = meta?.category || null;
       return {
         date: r.date, sku,
+        // Amazon reports FBA and merchant-fulfilled sales of one catalog SKU
+        // as separate seller SKUs (CWD-4X4-FBA vs CWD-4X4), so a day can have
+        // two rows for the same product. Without saying which is which, the
+        // pair reads as a duplicate.
+        channel: /-FBA$/i.test(r.amazon_sku || "") ? "FBA" : "FBM",
         product: meta?.product || r.title || sku,
         variant: meta?.variant || "",
         category: cat,
