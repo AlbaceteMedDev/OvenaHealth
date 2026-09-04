@@ -112,7 +112,7 @@ export const WIDGETS = [
               ${line("Total revenue", c.revenue, { kind: "in", strong: true })}
               ${line("Amazon fees", p.fees, {
                 note: p.fbaUnitsCharged
-                  ? `referral; ${fmtNumber(p.fbaUnitsCharged)} FBA units also charged fulfilment. Published schedule: on the settlement ledger through Aug 16, merchant-fulfilled referral actually settled at 5–6% on socks and near zero on the 5 ft roll, so this may overstate FBM fees`
+                  ? `referral; ${fmtNumber(p.fbaUnitsCharged)} FBA units also charged fulfilment — Amazon\u2019s own per-unit fee preview for each SKU (Seller Central, Sep 3, 2026), which matches what the settlement ledger actually charged`
                   : "referral, measured from settlement",
                 hintKey: "FBA",
               })}
@@ -168,9 +168,10 @@ export const WIDGETS = [
           Their revenue counts here but their COGS and shipping do not, so contribution is overstated.</div>
         </div>` : ""}
         <p class="muted" style="margin:12px 0 0;font-size:12px;">
-          Costs are per unit sold, on both channels. Amazon fees use the published referral schedule
-          (15%, or 8% under $10), checked against the prices actually realised per SKU: merchant-fulfilled
-          units pay referral only, and FBA-fulfilled units pay referral plus fulfilment — the line above
+          Costs are per unit sold, on both channels. Amazon fees are Amazon&rsquo;s own per-unit fee
+          preview for each SKU, read from Seller Central on Sep 3, 2026, and they agree with what the
+          settlement ledger actually charged: merchant-fulfilled units pay referral only (0&ndash;7%, not
+          the 15% headline rate), and FBA-fulfilled units pay referral plus fulfilment — the line above
           says how many units were charged which. Outbound postage comes from imported carrier labels
           where they cover a day, and a flat per-parcel estimate where they do not. Amazon&rsquo;s own account
           fees — the monthly subscription, service fees and inbound freight to FBA — are period costs
