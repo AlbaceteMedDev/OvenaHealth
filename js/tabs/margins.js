@@ -1,7 +1,8 @@
 // Margins tab — manual COGS entry, per-SKU profit, blended margin.
 
 import { seedInventory } from "../data/inventory.js";
-import { fetchSales, salesBySku } from "../data/live.js";
+import { fetchSales, salesBySku, fetchAmzOrders } from "../data/live.js";
+import { resolveSku } from "../data/inventory.js";
 import { getState, updateRow, subscribe } from "../state.js";
 import { openPostageImport } from "../postage.js";
 import { clearCache } from "../data/live.js";
@@ -17,15 +18,33 @@ let filter = "all";
 // same as "no sales", so the table draws immediately either way.
 let soldInWindow = new Map();
 
+// Units Amazon itself shipped, per catalog SKU. Needed because the two
+// fulfilment routes carry completely different fees: a merchant-fulfilled
+// sock pays $1.57 referral, an FBA one pays $6.23 referral plus fulfilment.
+// This tab charged the merchant rate to everything, which read as an 81.7%
+// margin on socks that actually earn 60.6%.
+let fbaUnitsBySku = new Map();
+
 async function loadSales() {
-  const { rows, error } = await fetchSales(period);
-  if (error) {
+  const [sales, orders] = await Promise.all([fetchSales(period), fetchAmzOrders(period)]);
+  if (sales.error) {
     soldInWindow = new Map();
   } else {
     soldInWindow = new Map(
-      salesBySku(rows).map((s) => [s.sku, { units: s.units, revenue: s.revenue }]),
+      salesBySku(sales.rows).map((s) => [s.sku, { units: s.units, revenue: s.revenue }]),
     );
   }
+  // amz_orders keys on the SELLER sku ("SOCK-AID-FBA"), which does not match
+  // the catalog sku, so resolveSku has to map it before anything lines up.
+  const next = new Map();
+  for (const r of orders.rows || []) {
+    if (r.fulfillment_channel !== "Amazon") continue;
+    if (r.order_status === "Cancelled") continue;
+    const row = resolveSku(r.sku, null);
+    if (!row) continue;
+    next.set(row.sku, (next.get(row.sku) || 0) + (r.quantity || 0));
+  }
+  fbaUnitsBySku = next;
   if (panelEl) render();
 }
 
@@ -153,7 +172,18 @@ function buildRows() {
     const stockOnHand = s.amazon + s.warehouse;
     const retail = row.suggestedPrice;
     const cogs = s.cogs || 0;
-    const amazonFee = s.amazonFee || 0;
+    // Charge each unit the fee its own fulfilment route actually incurs,
+    // then blend by how the window's units really shipped. With no FBA
+    // units this collapses to the merchant rate, which is what it always
+    // was; with an all-FBA window it is entirely the FBA rate.
+    const merchantFee = s.amazonFee || 0;
+    const fbaFee = s.amazonFeeFba > 0 ? s.amazonFeeFba : merchantFee;
+    const fbaUnits = Math.min(sale.units, fbaUnitsBySku.get(row.sku) || 0);
+    const fbmUnits = Math.max(0, sale.units - fbaUnits);
+    const amazonFee = sale.units > 0
+      ? (fbmUnits * merchantFee + fbaUnits * fbaFee) / sale.units
+      : fbaFee;
+    const fbaShare = sale.units > 0 ? fbaUnits / sale.units : 1;
     // Gross is kept alongside net so the Amazon fee's bite stays visible
     // rather than being folded silently into one number.
     const marginPerUnit = retail - cogs;
@@ -163,7 +193,7 @@ function buildRows() {
     const grossProfit = cogs > 0 ? sale.units * marginPerUnit : 0;
     const netProfit = cogs > 0 ? sale.units * netPerUnit : 0;
     return {
-      ...row, stockOnHand, retail, cogs, amazonFee,
+      ...row, stockOnHand, retail, cogs, amazonFee, fbaShare, merchantFee, fbaFee,
       marginPerUnit, marginPct, netPerUnit, netPct,
       unitsSold: sale.units, revenue: sale.revenue,
       grossProfit, netProfit, hasCogs: cogs > 0,
@@ -256,7 +286,9 @@ function renderTable() {
           <input type="number" min="0" step="0.01" data-field="cogs"
                  value="${r.cogs ? r.cogs.toFixed(2) : ""}" placeholder="—" />
         </td>
-        <td class="num">${r.amazonFee ? fmtCurrency(r.amazonFee) : `<span class="muted">—</span>`}</td>
+        <td class="num">${r.amazonFee
+          ? `${fmtCurrency(r.amazonFee)}${r.fbaShare > 0 ? `<div class="muted" style="font-size:11px">${Math.round(r.fbaShare * 100)}% FBA</div>` : ""}`
+          : `<span class="muted">—</span>`}</td>
         <td class="num">${r.hasCogs ? fmtCurrency(r.netPerUnit) : `<span class="muted">—</span>`}</td>
         <td class="num">${
           r.hasCogs
