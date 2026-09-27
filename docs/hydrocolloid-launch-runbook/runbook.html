@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hydrocolloid Launch Runbook</title>
+<style>
+  @font-face { font-family: "Myriad Pro"; src: url("../../MyriadPro-Regular.otf"); font-weight: 400; }
+  @font-face { font-family: "Myriad Pro"; src: url("../../MyriadPro-Semibold.otf"); font-weight: 600; }
+  @font-face { font-family: "Myriad Pro"; src: url("../../MyriadPro-Bold_A.otf"); font-weight: 700; }
+  @page { size: Letter; margin: 0.7in 0.75in 0.75in; }
+  :root {
+    --navy: #1a2843; --teal: #4a7d8a; --cream: #f3ecde; --ink: #0a0e1a; --ink-2: #3f4654;
+    --muted: #8a91a0; --line: #d9dde3; --warn: #9a3412; --warn-bg: #fff4ec;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Myriad Pro", Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.42; color: var(--ink); margin: 0; background: #fff; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 25pt; color: var(--navy); margin: 0 0 2pt; }
+  h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 16pt; color: var(--navy); margin: 20pt 0 6pt; padding-bottom: 3pt; border-bottom: 1px solid var(--line); break-after: avoid; }
+  h3 { font-size: 11pt; font-weight: 700; margin: 12pt 0 4pt; break-after: avoid; }
+  h3 .when { font-weight: 400; color: var(--muted); }
+  p { margin: 0 0 6pt; }
+  .meta { color: var(--muted); font-size: 9.5pt; margin-bottom: 10pt; }
+  .lead { font-size: 11pt; color: var(--ink-2); }
+  ol, ul { margin: 0 0 6pt; padding-left: 18pt; }
+  li { margin-bottom: 2.5pt; }
+  ul.check { list-style: none; padding-left: 0; }
+  ul.check > li { position: relative; padding-left: 17pt; break-inside: avoid; }
+  ul.check > li::before { content: ""; position: absolute; left: 0; top: 2.5pt; width: 9pt; height: 9pt; border: 1px solid #9aa1ad; border-radius: 2px; }
+  .day { break-inside: avoid; }
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 8pt; font-size: 9.8pt; break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 4pt 6pt; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; color: var(--ink-2); background: #f6f7f8; }
+  td:first-child { font-weight: 600; }
+  table.plain td:first-child { font-weight: 400; }
+  .num { white-space: nowrap; }
+  .esc { font-weight: 700; color: var(--warn); letter-spacing: 0.02em; }
+  .box { border: 1px solid var(--line); border-left: 3px solid var(--teal); background: #f7fafa; padding: 7pt 10pt; margin: 8pt 0; break-inside: avoid; }
+  .box.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+  .box p:last-child, .box ul:last-child { margin-bottom: 0; }
+  .box-title { font-weight: 700; margin-bottom: 3pt; }
+  code { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 9pt; background: #f1f2f4; padding: 0 2pt; border-radius: 2px; }
+  .quote { border-left: 2px solid var(--line); padding: 2pt 0 2pt 10pt; color: var(--ink-2); font-style: italic; margin: 4pt 0 8pt; }
+  .small { font-size: 9pt; color: var(--ink-2); }
+  .page-break { break-before: page; }
+</style>
+</head>
+<body>
+
+<h1>Hydrocolloid Launch Runbook</h1>
+<div class="meta">Revision 2 &nbsp;·&nbsp; Sep 27, 2026 &nbsp;·&nbsp; Owner: @H</div>
+
+<p class="lead">This is the execution list for the hydrocolloid roll launch on TikTok and Meta. Work through the calendar one day at a time and check off each box. When a calendar item says “Setup&nbsp;N”, follow that setup’s click-by-click steps in the Setup guide. Send the Friday report every week. Anything marked <span class="esc">ESCALATE</span> goes to Harold the same day.</p>
+
+<h2>At a glance</h2>
+<table>
+  <tr><th style="width:24%">Item</th><th>Value</th></tr>
+  <tr><td>Products</td><td>16 ft roll (<code>HC-ROLL16FT</code>) <b>$15.99</b> &nbsp;·&nbsp; 5 ft roll (<code>HC-ROLL5FT</code>) <b>$9.99</b></td></tr>
+  <tr><td>TikTok discount</td><td>Shop voucher <b>HC10</b>: 10% off, new customers, 1 per customer. Show it on every TikTok video, caption and live.</td></tr>
+  <tr><td>Shopify discounts</td><td><b>TIKTOK10</b> (only for the Shopify link in the TikTok bio) and <b>META10</b> (Meta ads). Both 10% off, one use per customer.</td></tr>
+  <tr><td>Why two kinds</td><td>Shopify codes do not work at TikTok Shop checkout. A buyer who taps the orange cart pays inside TikTok, so TikTok content uses the HC10 voucher.</td></tr>
+  <tr><td>Paid budgets</td><td>GMV Max $50/day from Day 9 · Live Shopping ad $20 per live · Spark Ads 3 × $20/day from Week 3 · Meta $50/day from Week 3. <b>Planned total from Week 3: about $1,140/week</b> before any Rules-table increase.</td></tr>
+  <tr><td>People</td><td><b>You</b>: run this document. <b>Harold</b>: approvals and escalations. <b>Katy</b>: live host. <b>Editors</b>: video cuts. <b>Ops</b>: ships Shopify and TikTok Shop orders and samples.</td></tr>
+  <tr><td>Deadlines</td><td>Friday report to Harold by 3 pm ET every Friday. Affiliate sample requests: approve within 24 hours and ship the same day.</td></tr>
+</table>
+
+<h2>Setup guide</h2>
+<p>These are the click-by-click steps. Do each one on the day the calendar gives it, not all at once. You need the Day 1 logins before any of them will work. TikTok renames menus a few times a year. If a label is slightly different, pick the closest match. If a screen doesn’t match at all, send Harold a screenshot rather than guessing.</p>
+
+<h3>Setup 1. Connect TikTok Shop to Shopify <span class="when">(Day 2)</span></h3>
+<p class="small">Result: TikTok Shop orders land in Shopify for shipping, and the TikTok pixel and Events API are installed.</p>
+<ol>
+  <li>Shopify admin &gt; Apps &gt; search “TikTok” &gt; install the official TikTok app.</li>
+  <li>In the app: Connect TikTok Ads account (Ovena TikTok Ads login), then Connect TikTok Shop (Seller Center login). Approve both.</li>
+  <li>Turn on Product sync and Order sync. Check the box that sends TikTok Shop orders into Shopify orders.</li>
+  <li>Data sharing: set to Maximum. This installs the TikTok pixel and Events API.</li>
+  <li>Shopify &gt; Orders: confirm the filter “Sales channel: TikTok” exists. Ops ships these like any Shopify order.</li>
+</ol>
+
+<h3>Setup 2. List both rolls in TikTok Shop <span class="when">(Day 3)</span></h3>
+<ol>
+  <li>seller-us.tiktok.com (Seller Center) &gt; Products &gt; Manage Products.</li>
+  <li>If the Shopify sync already pushed the rolls over, open each one and complete the fields below. If not, use Add New Product.</li>
+  <li>Category: Health &gt; Medical Supplies &gt; Wound Care, or the closest wound care or first aid category offered.</li>
+  <li>Product names:<br>“Ovena Hydrocolloid Roll 2 in x 16 ft, Cut-to-Size Hydrocolloid Bandage”<br>“Ovena Hydrocolloid Roll 2 in x 5 ft, Cut-to-Size Hydrocolloid Bandage”</li>
+  <li>Images: at least 5, with the roll on white as the first. Use the Shopify photos.</li>
+  <li>Description: paste the Shopify description. Delete any sentence that uses a word from the never-use list in Rules. Add no new claims.</li>
+  <li>Price: $15.99 (16 ft) and $9.99 (5 ft). Stock: match Shopify.</li>
+  <li>Shipping: Shipping template &gt; Seller shipping &gt; ships from the California address &gt; handling time 3 business days.</li>
+  <li>Attributes: fill in every required field. If TikTok asks for certification, upload the regulatory document Harold provides. Do not pick one yourself.</li>
+  <li>Submit. Status shows Reviewing and usually clears in 1 to 2 days. Check Products &gt; Manage Products daily. <span class="esc">ESCALATE</span> a rejection.</li>
+</ol>
+
+<h3>Setup 3. Create voucher HC10 <span class="when">(Day 3)</span></h3>
+<ol>
+  <li>Seller Center &gt; Marketing &gt; Promotions &gt; Create &gt; Voucher (or Product Discount).</li>
+  <li>Type: Product voucher. Discount: 10% off. Applies to: both rolls. Audience: New customers. Claim limit: 1 per customer. Start today, no end date. Name: <b>HC10</b>.</li>
+  <li>Save. It shows as a claimable coupon on the product page and in lives.</li>
+</ol>
+
+<h3>Setup 4. Open the affiliate plan <span class="when">(Day 6)</span></h3>
+<ol>
+  <li>Seller Center &gt; Affiliate (or Affiliate Center) &gt; Affiliate Plans &gt; Open Plan &gt; Create.</li>
+  <li>Add both rolls. Commission rate: 20%. Plan name: Hydrocolloid Open 20.</li>
+  <li>Free samples: on, 1 roll per creator, approval required, cap 50.</li>
+  <li>Save. Sample requests appear under Affiliate &gt; Samples.</li>
+  <li>To invite a specific creator: Affiliate &gt; Find Creators &gt; search by handle &gt; Invite (Targeted Plan, same 20%), or DM them the outreach message from Rules.</li>
+</ol>
+
+<h3>Setup 5. Post a video with the product tagged <span class="when">(Day 6 onward)</span></h3>
+<ol>
+  <li>Open the TikTok app, logged in as Ovena. Tap + &gt; upload the file from the Cuts folder.</li>
+  <li>Caption: one line with “10% off your first order in the cart” and no more than 3 hashtags (#hydrocolloid #skincare #tiktokshop).</li>
+  <li>Add link &gt; Product &gt; choose the 16 ft roll. This puts the orange shopping cart on the video.</li>
+  <li>Post. Share &gt; Copy link, then paste the link into the Video tab.</li>
+  <li>To make the video available as a Spark Ad later: on the video, tap &gt; three dots &gt; Ad settings &gt; turn on Ad authorization. Copy the code into the Video tab.</li>
+</ol>
+<p class="small">Bio (set once): the Shopify hydrocolloid link with code TIKTOK10, for people who would rather buy on the website.</p>
+
+<h3>Setup 6. Go live with the Shop <span class="when">(Day 8, then every Wednesday)</span></h3>
+<ol>
+  <li>LIVE may need 1,000 followers. It may also be available to Shop-linked accounts, which Ovena is after Setup 1; TikTok’s current rule is unconfirmed. If LIVE is greyed out, <span class="esc">ESCALATE</span>.</li>
+  <li>TikTok app &gt; + &gt; swipe to LIVE. Title: “16 ft hydrocolloid for $15.99, cut your own patches.”</li>
+  <li>Shopping bag icon &gt; Add products &gt; select both rolls &gt; Pin the 16 ft roll.</li>
+  <li>Voucher icon &gt; add HC10 so it shows on screen.</li>
+  <li>Go LIVE. Every 5 minutes: cut a piece, stick it on, say the price, and point to the cart.</li>
+  <li>After the live: Profile &gt; LIVE Center &gt; this live. Log viewers, orders and revenue in the Lives tab. Save the replay.</li>
+</ol>
+
+<h3>Setup 7. Paid campaigns on TikTok <span class="when">(Day 8 and Day 9)</span></h3>
+<ol>
+  <li><b>Live Shopping ad (Day 8):</b> ads.tiktok.com &gt; Campaign &gt; Create &gt; Product Sales &gt; Live Shopping &gt; the Ovena account &gt; budget $20 &gt; schedule it from 15 minutes before the live until the end of the live.</li>
+  <li><b>GMV Max (Day 9):</b> Campaign &gt; Create &gt; GMV Max, which is a tile on the create screen. If the tile isn’t there, go to Seller Center &gt; Marketing &gt; Ads. Type: Product GMV Max.</li>
+  <li>Select the 16 ft roll. Target ROI: 2.0. Daily budget: $50. Creative: leave “all videos” selected so it uses account and affiliate videos.</li>
+  <li>Submit, then change nothing for 7 days. Read results at Ads Manager &gt; Campaigns, in the Cost, Orders and ROI columns.</li>
+</ol>
+<p class="small">TikTok’s “ROI” is gross revenue ÷ ad cost, the same number this document calls ROAS. If Ads Manager sends you into GMV Max when you try to create a Live Shopping ad or a Spark Ad for a Shop product, stop and <span class="esc">ESCALATE</span>. Don’t work around it.</p>
+
+<h2 class="page-break">Week 1: set up</h2>
+
+<div class="day"><h3>Day 1 (Mon): accounts, sheet, baseline</h3>
+<ul class="check">
+  <li>Get admin access to: TikTok Shop Seller Center, TikTok Ads Manager, the Ovena TikTok account, Meta Business Suite, Shopify admin, Klaviyo.</li>
+  <li>Create the tracking sheet (see Tracking sheet) and share it with Harold.</li>
+  <li>Create the shared folder /Hydrocolloid Launch/ with subfolders Raw Video, Cuts, Statics, Affiliate List, Reports.</li>
+  <li>Record the baseline in the Weekly tab: average weekly hydrocolloid orders on Shopify and on Amazon over the 4 weeks before launch. Without it, the launch’s lift can’t be measured.</li>
+</ul></div>
+
+<div class="day"><h3>Day 2 (Tue): Shopify page, pixels, codes</h3>
+<ul class="check">
+  <li>Confirm the hydrocolloid product page shows: 16 ft roll $15.99, 5 ft roll $9.99, shipping cost before checkout, and a 2-roll bundle option.</li>
+  <li>Do <b>Setup 1</b>. It installs the TikTok pixel and Events API.</li>
+  <li>Install the Meta pixel and Conversions API through Shopify app “Facebook &amp; Instagram”.</li>
+  <li>Pixel test: buy one 5 ft roll at full price with the company card. Confirm the Purchase event appears in both TikTok Events Manager and Meta Events Manager, then refund the order. <span class="esc">ESCALATE</span> if either event hasn’t fired by end of day.</li>
+  <li>Create two Shopify discount codes, each 10% off and one use per customer: TIKTOK10 and META10.</li>
+  <li>Add a post-purchase survey app (KnoCommerce or Zigpoll) with two questions: “Where did you see us?” (TikTok video / TikTok live / Instagram or Facebook / Amazon / friend / other) and “Which video?” (free text).</li>
+</ul></div>
+
+<div class="day"><h3>Day 3 (Wed): TikTok Shop listing</h3>
+<ul class="check">
+  <li>Do <b>Setup 2</b> for both rolls, then <b>Setup 3</b> (voucher HC10).</li>
+  <li>Check listing status daily until both rolls are approved. <span class="esc">ESCALATE</span> if one is rejected.</li>
+</ul></div>
+
+<div class="day"><h3>Day 4 (Thu): creative cuts</h3>
+<ul class="check">
+  <li>Send the editors every existing hydrocolloid video with this instruction: three versions of each, same body, different first 3 seconds: (a) price math on screen, “16 ft for $15.99”; (b) “Stop buying pimple patches”; (c) scissors cutting the roll, close up.</li>
+  <li>File names: <code>HC-[video#]-[a/b/c]-v1.mp4</code>. Log each one in the Video tab.</li>
+  <li>Due from editors: Monday of Week 2.</li>
+</ul></div>
+
+<div class="day"><h3>Day 5 (Fri): affiliate list and first report</h3>
+<ul class="check">
+  <li>Build the affiliate list: 50 TikTok creators with 5k to 100k followers, in skincare, running or mom content, with the TikTok Shop affiliate badge. Columns: handle, followers, niche, email or DM, status.</li>
+  <li>Send the outreach message (see Rules) to Harold for a one-time OK.</li>
+  <li>Send the Friday report by 3 pm ET.</li>
+</ul></div>
+
+<h2>Week 2: go live</h2>
+
+<div class="day"><h3>Day 6 (Mon): start posting</h3>
+<ul class="check">
+  <li>Post the first video (<b>Setup 5</b>). From today, post one video a day, 5 days a week. Best slots: 7 to 9 am or 6 to 9 pm ET.</li>
+  <li>Log each post in the Video tab: date, file name, hook version, link.</li>
+  <li>Do <b>Setup 4</b> (affiliate plan).</li>
+  <li>Send the outreach message to creators 1 to 25. Set their status to “sent”.</li>
+</ul></div>
+
+<div class="day"><h3>Day 7 (Tue)</h3>
+<ul class="check">
+  <li>Post video 2.</li>
+  <li>Reply to every comment on video 1. Answer questions with a 15-second reply video (phone, roll in hand). Injury or reaction comments get no reply; follow Escalations.</li>
+  <li>Send outreach to creators 26 to 50.</li>
+</ul></div>
+
+<div class="day"><h3>Day 8 (Wed): first live</h3>
+<ul class="check">
+  <li>Morning: post video 3 with the caption “Live at 7 pm ET tonight.”</li>
+  <li>Live kit: ring light, phone on a stand, the roll, scissors, a competitor patch box, a shoe (blister demo), and a printed price card reading “16 ft = $15.99”.</li>
+  <li>Create the Live Shopping ad (<b>Setup 7</b>, step 1).</li>
+  <li>7:00 pm ET, 45 minutes, Katy on camera (<b>Setup 6</b>).</li>
+  <li>After: save the replay, log the numbers in the Lives tab, and send the editors the best 30 seconds to cut as a post.</li>
+</ul></div>
+
+<div class="day"><h3>Day 9 (Thu): first paid campaign</h3>
+<ul class="check">
+  <li>Post video 4.</li>
+  <li>Create the GMV Max campaign (<b>Setup 7</b>, steps 2 to 4). Change nothing for 7 days.</li>
+  <li>Approve pending sample requests and ship them the same day with a printed note: “Post within 14 days, tag @ovenahealth, and turn on the paid-partnership toggle and #ad.” Log every roll sent in the Affiliates tab.</li>
+</ul></div>
+
+<div class="day"><h3>Day 10 (Fri)</h3>
+<ul class="check">
+  <li>Post video 5.</li>
+  <li>Follow up once with creators who haven’t replied.</li>
+  <li>Fill in the sheet: spend, orders and cost per order from Ads Manager; Shop orders from Seller Center; Shopify orders by code.</li>
+  <li>Friday report by 3 pm ET. Include: the 5 posts with views, the live numbers, affiliates accepted, and GMV Max spend and orders.</li>
+</ul></div>
+
+<h2>Weeks 3 and 4: Meta on, scale what works</h2>
+
+<div class="day"><h3>Week 3, Monday: pick winners</h3>
+<ul class="check">
+  <li>Compare only videos that have been live for at least 48 hours. Anything newer hasn’t finished collecting views.</li>
+  <li>Sort the Video tab by views. The top 3 become Spark Ads: Ads Manager &gt; Spark Ad, using the authorization code from the Video tab, objective Product Sales, $20/day each, for 7 days.</li>
+  <li>Sort by orders. The top hook version (a, b or c) becomes the one the editors lead with on all new cuts.</li>
+  <li>Send Harold the top 3 links and their numbers.</li>
+</ul></div>
+
+<div class="day"><h3>Week 3, Tuesday: Meta launch</h3>
+<ul class="check">
+  <li>Ads Manager &gt; Create &gt; Sales. Conversion location: Website. Event: Purchase. Campaign name: HC-Meta-Prospecting.</li>
+  <li>Ad set: Advantage+ audience, United States, ages 18 to 54, Advantage+ placements, $50/day, no end date.</li>
+  <li>Ads: 6 videos (the top TikTok cuts, using the original files from the Cuts folder, not TikTok downloads, which carry a watermark) and 3 statics from the editors (price math, roll vs. patch box, four-uses grid).</li>
+  <li>Primary text on all ads: “16 ft of hydrocolloid for $15.99. Cut your own patches. 10% off your first order with code META10.” Headline: “Ovena Hydrocolloid Roll.” Link: the Shopify hydrocolloid page with <code>?utm_source=meta&amp;utm_campaign=hc-prospecting</code>.</li>
+  <li>Submit. Check approval the next morning. <span class="esc">ESCALATE</span> any rejection with its stated reason.</li>
+</ul></div>
+
+<h3>Rest of Week 3 and Week 4: run the rules</h3>
+<table>
+  <tr><th style="width:22%">Check</th><th style="width:14%">When</th><th>Rule</th></tr>
+  <tr><td>Meta ad link CTR</td><td>Daily</td><td>Under 1.0% after $75 spent on that ad: turn the ad off.</td></tr>
+  <tr><td>Meta cost per order</td><td>Daily</td><td>$7 or less for 3 days in a row: raise the ad set budget 20%. Over $10 for 3 days in a row: cut it 20%. Anywhere in between: no change.</td></tr>
+  <tr><td>GMV Max ROI</td><td>Daily, after day 7</td><td>2.0 or higher for 3 days: raise the budget 20%. 1.5 to 2.0: no change. Under 1.5 for 5 days: <span class="esc">ESCALATE</span>.</td></tr>
+  <tr><td>Spark Ads</td><td>Every 7 days</td><td>Replace the 3 boosted videos with the current top 3.</td></tr>
+  <tr><td>New creative</td><td>Every 10 days</td><td>Ask the editors for 5 new cuts using the winning hook.</td></tr>
+  <tr><td>Any platform</td><td>After $1,500 cumulative spend</td><td>ROAS under 1.5: pause that platform and <span class="esc">ESCALATE</span>.</td></tr>
+</table>
+<p><b>No budget goes up more than 20% in one day, on any platform.</b> If total weekly spend goes above the planned $1,140, say so in the Friday report.</p>
+
+<div class="box">
+  <div class="box-title">Where the $7 and $10 come from</div>
+  <p>A Meta order with META10 brings in $14.39. Take off the roll’s landed cost of $3.20 (supplier invoice, delivered duty paid) and about $0.72 in card fees (estimate: 2.9% + $0.30). That leaves about <b>$10.47 before outbound shipping</b>. So $10 is the most a Meta order can cost before it loses money, and it assumes the buyer pays shipping. If Ovena pays shipping (about $4 to $5 a parcel, estimated), break-even drops to about $6, and Harold should lower both thresholds.</p>
+  <p>On TikTok, an order that came through an affiliate also pays 20% commission ($2.88) and TikTok’s referral fee (about 6%, to confirm in Seller Center). That leaves about $7.45 before shipping, a break-even ROI of about 1.9. The “no change” band of 1.5 to 2.0 can therefore lose money when most orders come through affiliates.</p>
+</div>
+
+<h2>Routine after launch</h2>
+<h3>Every day, 30 minutes, first thing</h3>
+<ul class="check">
+  <li>Post the day’s TikTok video with the product tagged.</li>
+  <li>Reply to all comments and DMs on TikTok and Meta, except the ones listed under Escalations.</li>
+  <li>Enter yesterday’s numbers in the Daily tab.</li>
+  <li>Check that TikTok Shop orders shipped within 3 business days. Message Ops about any that are late.</li>
+  <li>Run the Rules table.</li>
+</ul>
+<h3>Every week</h3>
+<ul class="check">
+  <li>Wednesday 7 pm ET: 45-minute live with a $20 Live Shopping ad.</li>
+  <li>Thursday: approve sample requests and ship them the same day. Follow up with creators who are more than 14 days past their sample and haven’t posted.</li>
+  <li>Friday: fill in the Weekly tab and send the Friday report to Harold by 3 pm ET.</li>
+</ul>
+<h3>Every 2 weeks</h3>
+<ul class="check">
+  <li>Send the editors the top 3 videos and the winning hook. Get 5 new cuts back within a week.</li>
+  <li>Send the next 25 creator invites.</li>
+</ul>
+
+<h2>Tracking sheet</h2>
+<p>One Google Sheet with four tabs. Numbers go in daily. The Friday report is a screenshot of the Weekly tab plus three sentences: what won, what got turned off, and what you need.</p>
+<h3>Daily tab <span class="when">(one row per platform per day)</span></h3>
+<table>
+  <tr><th style="width:30%">Column</th><th>Source</th></tr>
+  <tr><td>Date</td><td>Calendar day, ET</td></tr>
+  <tr><td>Platform</td><td>TikTok organic / TikTok paid / TikTok live / Affiliate / Meta</td></tr>
+  <tr><td>Spend $</td><td>TikTok Ads Manager, Meta Ads Manager</td></tr>
+  <tr><td>Orders</td><td>Seller Center for Shop orders; Shopify orders filtered by code (TIKTOK10, META10) or by UTM for Meta</td></tr>
+  <tr><td>Revenue $</td><td>Same sources as Orders</td></tr>
+  <tr><td>Cost per order $</td><td>Spend ÷ Orders</td></tr>
+  <tr><td>ROAS</td><td>Revenue ÷ Spend (TikTok labels this ROI)</td></tr>
+  <tr><td>Survey mentions</td><td>Post-purchase survey export</td></tr>
+</table>
+<p><b>Video tab</b> (one row per posted video): date, file name, hook a/b/c, TikTok link, Spark authorization code, views, likes, comments, Shop clicks, orders (Seller Center &gt; Analytics &gt; Video), boosted Y/N.</p>
+<p><b>Lives tab</b> (one row per live): date, host, peak viewers, total viewers, orders, revenue, ad spend, replay link.</p>
+<p><b>Affiliates tab</b> (one row per creator): handle, followers, niche, status (list / sent / accepted / sample shipped / posted), sample ship date, post link, orders, commission paid.</p>
+<p><b>Weekly tab</b>: totals from the Daily tab by platform, plus total hydrocolloid orders from all sources, set against the Day 1 baseline.</p>
+
+<h2>Rules</h2>
+<p><b>Words you can use:</b> protects, cushions, keeps the area moist, waterproof, medical-grade hydrocolloid, cut to size, from Ovena Health, a US medical device company.</p>
+<p><b>Words you never use</b> in captions, replies, lives or ads: heals, cures, treats acne, clears skin, removes scars, any number of days to heal, “better than” a named brand, “Made in USA” or anything that implies the rolls are made in the US. Don’t mention the FDA at all unless Harold has approved the exact wording.</p>
+<p><b>Images:</b> no open wounds, blood or pus. Pimples and blisters shown covered are fine. No before-and-after framing on Meta; use “day 1 / day 3, still on.”</p>
+<p><b>Affiliates:</b> every creator video carries both #ad and TikTok’s paid-partnership toggle. Log every roll sent out.</p>
+<p><b>Reviews on camera:</b> real customer reviews only, read word for word.</p>
+<p><b>Creator outreach message</b> (DM or email):</p>
+<div class="quote">Hi [name], I’m with Ovena Health, a US medical device company. We make a hydrocolloid roll (the same material as pimple patches, 16 ft for $15.99, cut your own). We’d love to send you a free roll to try for a TikTok Shop video, with 20% commission on every sale through your link. Interested? I’ll ship it this week.</div>
+
+<h2>Escalations</h2>
+<p>Send these to Harold the same day:</p>
+<ul>
+  <li>A listing or ad rejection on any platform.</li>
+  <li>A pixel that stops firing.</li>
+  <li>GMV Max ROI under 1.5 for 5 days, or any platform under 1.5 ROAS after $1,500 cumulative spend.</li>
+  <li>A video that passes 100k views, so budget can move fast.</li>
+  <li>A creator who asks for a flat fee.</li>
+  <li>An Ads Manager screen that forces GMV Max when you are creating a Spark or Live Shopping ad.</li>
+</ul>
+<div class="box warn">
+  <div class="box-title">Injury, allergic reaction or any medical complaint</div>
+  <p>Do not reply, hide or delete it. Take a screenshot that shows the handle, date, platform and full text, and forward it to Harold the same day. Harold enters it in the company complaint file. That record is a medical-device requirement, so treat every one this way, however minor it looks.</p>
+</div>
+<p><b>Do not change budgets, targets or prices outside the Rules table without an OK from Harold.</b></p>
+
+</body>
+</html>
